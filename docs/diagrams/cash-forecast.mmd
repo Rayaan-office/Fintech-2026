@@ -1,0 +1,19 @@
+%%{init: {"flowchart": {"wrappingWidth": 260}}}%%
+flowchart LR
+  subgraph IN["What we know"]
+    direction TB
+    B["<b>Cash today</b><br/>all connected accounts"]
+    I["<b>Money expected in</b><br/>unpaid invoices, adjusted for<br/>how late each customer usually pays"]
+    O["<b>Money going out</b><br/>bills with due dates,<br/>scheduled payments"]
+    R["<b>Repeating items</b><br/>rent, salaries, subscriptions<br/>spotted from past activity"]
+    P["<b>Everyday pattern</b><br/>typical day-to-day sales<br/>and spending"]
+  end
+  F["<b>Day-by-day forecast</b><br/>expected, best and worst case<br/>for the next 90 days"]
+  subgraph OUT["What the owner sees"]
+    direction TB
+    C["Cash forecast<br/>7 · 30 · 60 · 90 days"]
+    W["Early warning<br/>“Rent on 3 Nov will take you<br/>below your safety level”"]
+    FIN["Financing options<br/>sized to the gap"]
+  end
+  IN --> F --> OUT
+  N(["New payment, bill or<br/>bank record arrives"]) -. "forecast updates" .-> F

@@ -1,0 +1,22 @@
+%%{init: {"flowchart": {"wrappingWidth": 260}}}%%
+flowchart TD
+  S(["The AI wants to do something"])
+  R{"Is it only <b>reading</b><br/>or <b>suggesting</b>?"}
+  OUT{"Does it <b>send</b> anything outside<br/>or involve <b>money</b>?"}
+  SMALL{"Small amount, known supplier,<br/>AI is confident, nothing unusual?"}
+  RISK{"<b>High risk?</b><br/>supplier changes bank details,<br/>large or first-time payment"}
+  GO1(["Goes ahead<br/><i>suggestions wait in a review list</i>"])
+  GO2(["Goes ahead<br/><i>and can be undone</i>"])
+  ONE(["<b>One person</b> approves"])
+  TWO(["<b>Two people</b> approve"])
+  NEVER["<b>Never allowed for the AI</b><br/>manage users · change limits ·<br/>see hidden personal details · move real money"]
+
+  S --> R
+  R -- "yes" --> GO1
+  R -- "no" --> OUT
+  OUT -- "no" --> SMALL
+  SMALL -- "yes" --> GO2
+  SMALL -- "no" --> ONE
+  OUT -- "yes" --> RISK
+  RISK -- "no" --> ONE
+  RISK -- "yes" --> TWO

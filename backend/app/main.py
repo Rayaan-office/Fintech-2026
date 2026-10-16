@@ -1,0 +1,57 @@
+"""SME Finance Copilot API."""
+
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from . import handlers  # noqa: F401  (registers what approved actions do)
+from .api import activity, auth, connections, documents, inbox, webhooks
+from .config import get_settings
+from .security.http import SecurityHeadersMiddleware
+
+_s = get_settings()
+log = logging.getLogger("copilot")
+
+app = FastAPI(
+    title="SME Finance Copilot API",
+    version="1",
+    # The developer documentation page exists only in development
+    docs_url="/api/docs" if _s.is_dev else None,
+    redoc_url=None,
+    openapi_url="/api/openapi.json" if _s.is_dev else None,
+)
+app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(_: Request, exc: StarletteHTTPException):
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError):
+    fields = [".".join(str(x) for x in e.get("loc", [])[1:]) for e in exc.errors()]
+    return JSONResponse({"detail": "Some details are missing or invalid.", "fields": fields}, status_code=422)
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(_: Request, exc: Exception):
+    # Never reveal internals to the browser
+    log.exception("unhandled error: %s", type(exc).__name__)
+    return JSONResponse({"detail": "Something went wrong on our side. Please try again."}, status_code=500)
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True}
+
+
+app.include_router(auth.router)
+app.include_router(inbox.router)
+app.include_router(documents.router)
+app.include_router(activity.router)
+app.include_router(connections.router)
+app.include_router(webhooks.router)

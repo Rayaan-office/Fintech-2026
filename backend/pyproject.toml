@@ -1,0 +1,54 @@
+[project]
+name = "sme-copilot-api"
+version = "0.1.0"
+description = "SME Finance Copilot API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]",
+  "pydantic>=2",
+  "pydantic-settings",
+  "python-multipart",
+  "argon2-cffi",
+  "pyotp",
+  "cryptography",
+  "httpx",
+  "stripe",
+  "plaid-python",
+  "boto3",
+  "langgraph",
+  "pymupdf",
+  "pytesseract",
+  "pillow",
+  "presidio-analyzer",
+  "presidio-anonymizer",
+  "spacy",
+  "python-magic",
+  "pandas",
+  "numpy",
+  "rapidfuzz",
+  "phonenumbers",
+  "apscheduler",
+  "reportlab",
+  "sse-starlette",
+  "openpyxl",
+  "python-stdnum",
+  "dnspython",
+  "dkimpy",
+  "pyspf",
+  "qrcode",
+  "en_core_web_lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "pip-audit", "ruff"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests/backend"]
+pythonpath = [".", ".."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
