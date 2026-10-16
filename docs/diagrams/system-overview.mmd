@@ -1,0 +1,32 @@
+%%{init: {"flowchart": {"wrappingWidth": 260}}}%%
+flowchart TB
+  subgraph IN["Where the money data comes from"]
+    direction LR
+    EM["<b>Email inbox</b> · required<br/>bills, receipts, payment notices<br/><i>Gmail, Outlook… (demo: Mailpit)</i>"]
+    PAY["<b>Payment platform</b> · optional<br/>money customers paid you<br/><i>Stripe, PayPal… (demo: Stripe)</i>"]
+    BANK["<b>Bank account</b> · optional<br/>money in and out of the bank<br/><i>Plaid or other bank link, or a statement file (demo: Plaid)</i>"]
+    ACC["<b>Accounting software</b> · optional<br/>the official books<br/><i>QuickBooks, Xero… (demo: QuickBooks)</i>"]
+    UP["<b>Upload or photo</b><br/>PDF, image, spreadsheet, phone camera"]
+  end
+
+  subgraph APP["Our app"]
+    direction LR
+    A1["1 · Collect and read every document,<br/>hiding personal details first"]
+    A2["2 · Build one record of all money in and out,<br/>and update the accounting software once approved"]
+    A3["3 · Analyse the business: forecast cash,<br/>warn early, explain changes, recommend,<br/>compare financing, answer questions"]
+    A1 --> A2 --> A3
+  end
+
+  subgraph OUT["What the business owner gets"]
+    direction LR
+    O1["Cash forecast<br/>7 · 30 · 60 · 90 days"]
+    O2["Early warnings<br/>about upcoming bills"]
+    O3["Business health and<br/>recommendations"]
+    O5["Chat assistant<br/>“How is the business doing?”"]
+    O4["Short list of items<br/>for a person to check"]
+  end
+
+  AI["AI model<br/>sees only cleaned text,<br/>keeps nothing"]
+
+  IN --> APP --> OUT
+  APP <-. "cleaned text only" .-> AI

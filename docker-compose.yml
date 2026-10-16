@@ -1,0 +1,56 @@
+# Local services for development. The API and web app run on the host.
+name: sme-copilot
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      VAULT_DB_USER: ${VAULT_DB_USER}
+      VAULT_DB_PASSWORD: ${VAULT_DB_PASSWORD}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  archive:
+    # S3-compatible file store for original documents (encrypted by our app before upload)
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        printf '{"identities":[{"name":"copilot","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_KEY" "$$S3_SECRET" > /tmp/s3.json
+        exec weed server -dir=/data -ip.bind=0.0.0.0 -s3 -s3.config=/tmp/s3.json
+    environment:
+      S3_KEY: ${ARCHIVE_S3_ACCESS_KEY}
+      S3_SECRET: ${ARCHIVE_S3_SECRET_KEY}
+    ports: ["127.0.0.1:8333:8333"]
+    volumes:
+      - archivedata:/data
+
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 5000
+      # The API runs on the host during development
+      MP_WEBHOOK_URL: http://host.docker.internal:8000/webhooks/mailpit
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+
+volumes:
+  pgdata:
+  archivedata:
