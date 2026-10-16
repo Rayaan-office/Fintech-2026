@@ -87,12 +87,16 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 
 | Stage | What | Uses backend stage | Status |
 |---|---|---|---|
-| F1 | Setup, design tokens, app shell, sign-in and two-step | 0 | In progress |
-| F2 | Shared components and test setup | 0 | In progress |
-| F3 | Inbox, documents review, activity, connections | 0, 2–5 | Not started |
-| F4 | Home, cash flow, business health | 6 | Not started |
-| F5 | Recommendations, financing, Ask (chat) | 7 | Not started |
-| F6 | Interaction features and end-to-end journeys | All | Not started |
+| F1 | Setup, design tokens, app shell, sign-in and two-step | 0 | Done |
+| F2 | Shared components and test setup | 0 | Done |
+| F3 | Inbox, documents review, activity, connections | 0, 2–5 | Drafted |
+| F4 | Home, cash flow, business health | 6 | Drafted |
+| F5 | Recommendations, financing, Ask (chat) | 7 | Drafted |
+| F6 | Interaction features and end-to-end journeys | All | Drafted (search, shortcuts dialog) |
+
+"Drafted" means page layouts and data hooks exist but have not been tried against real endpoints. Each stage finishes them: connect to the real API, add tests, check the screens.
+
+Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs and logs), `/api/business-health`, and document pages served as images (`pages[]`), because our CSP blocks showing PDFs inside the page.
 
 ### F1: Setup, design tokens, app shell, sign-in
 
