@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import handlers, scheduler  # noqa: F401  (handlers registers what approved actions do)
-from .api import activity, auth, connections, documents, inbox, webhooks
+from .api import activity, auth, connections, documents, inbox, insights, webhooks
 from .config import get_settings
 from .security.http import SecurityHeadersMiddleware
 
@@ -64,4 +64,5 @@ app.include_router(inbox.router)
 app.include_router(documents.router)
 app.include_router(activity.router)
 app.include_router(connections.router)
+app.include_router(insights.router)
 app.include_router(webhooks.router)

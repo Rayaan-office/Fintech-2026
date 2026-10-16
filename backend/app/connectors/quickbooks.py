@@ -494,11 +494,32 @@ def sync(db: Session, business_id, full: bool = False) -> dict:
                 r.status, r.open_minor = "void", 0
                 counts["removed"] += 1
 
+    _paid_dates(db, realm)
     meta.update(cdc_since=started.isoformat(timespec="seconds"), terms=terms, last_read="full" if full else "changes")
     c.meta = meta
     db.flush()
     mark_synced(db, c, counts)
     return counts
+
+
+def _paid_dates(db: Session, realm: str) -> None:
+    """QuickBooks says an invoice or bill is paid but not when: it is the day of the last payment
+    that settled it. Used for how long customers take to pay."""
+    db.flush()
+    rows = db.execute(select(Record).where(Record.external["realm"].astext == realm, Record.status != "void")).scalars().all()
+    last: dict[str, date] = {}
+    for r in rows:
+        if r.kind in ("payment_in", "payment_out"):
+            for link in r.external.get("linked") or []:
+                last[link] = max(last.get(link, r.date), r.date)
+    for r in rows:
+        if r.kind not in ("invoice", "bill"):
+            continue
+        key = f"{r.external.get('qbo_type')}:{r.external.get('qbo_id')}"
+        if r.status == "paid" and not r.paid_date and key in last:
+            r.paid_date = last[key]
+        elif r.status == "open" and r.paid_date and r.open_minor > 0:
+            r.paid_date = None
 
 
 # ── Writing (only after approval) ──────────────────────────────────────────

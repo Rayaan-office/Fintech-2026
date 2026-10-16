@@ -52,17 +52,25 @@ We link every invoice, bill and payment to its partner, such as an invoice to th
 
 One payment can also settle several invoices, or arrive in parts; we test those combinations too.
 
+**Never suggested:** a payment that names a different invoice or bill of ours, or clearly comes from a different customer or supplier; and two items from the same accounting or payment software, which already records what each payment settled. A pair a person turned down is not suggested again, and a suggestion that no longer fits (the invoice was paid another way, the payment was cancelled) is withdrawn.
+
+**Same money, seen twice:** a bank payment for an invoice or bill the accounting software already shows as paid is linked to it without changing either. We find it by the invoice number, or for direct debits and card payments by the same party, amount and date.
+
 ## 4. Cash forecast
 
 ![How the cash forecast is built](diagrams/cash-forecast.png)
 
-We build the forecast day by day for the next 90 days from five ingredients:
+We build the forecast day by day for the next 90 days from these ingredients:
 
 1. **Cash today** across all connected accounts.
 2. **Money expected in:** each unpaid invoice is placed on the day the customer is likely to pay, based on how late that customer has paid before.
 3. **Money going out:** bills on their due dates, plus scheduled payments.
-4. **Repeating items:** rent, salaries and subscriptions, spotted because the same party is paid a similar amount at a regular interval.
-5. **Everyday pattern:** the typical net in or out for each day of the week, covering everything not listed above.
+4. **Repeating items:** rent, salaries and subscriptions, spotted because the same party is paid a similar amount at a regular interval. Regular customers and suppliers are spotted from how often they are invoiced or billed, which is steadier than when they pay; their next invoices and bills are placed after their usual payment delay.
+5. **VAT:** when the bank doesn't yet show a regular VAT payment, we estimate the next one from the VAT on that quarter's invoices, bills and card sales.
+6. **Everyday pattern:** the typical net in or out for each day of the week, covering everything not listed above.
+7. **Planned costs** the owner adds, which never change real records.
+
+Bills that are already overdue are assumed to be paid now. Invoices more than 60 days overdue are only counted in the best case. Money already sitting in the payment platform arrives with the next payout, so it isn't counted twice. Accounts and items in another currency are left out and listed, because we hold no exchange rates.
 
 We show an **expected** line, plus a **best** and **worst** case built from how much customer payment dates and everyday activity have varied in the past. The forecast is recalculated whenever a new payment, bill or bank record arrives.
 
@@ -96,7 +104,7 @@ All figures come from our single record of money in and out. Each item is given 
 ## 7. Explaining why cash changed
 
 1. Compare two periods, for example this month against last month.
-2. Split the change into groups: sales, customer payment timing, supplier costs, salaries, tax, financing and one-off items.
+2. Split the change into groups: customer payments (noting how much that fell due is still unpaid, which shows late payment), card sales, supplier costs, salaries, rent, tax, financing and one-off items. The groups add up exactly to the change.
 3. Rank the groups by how much each moved cash, and find the largest single items within each.
 4. The AI writes a short explanation **from these numbers only**.
 5. Our code then checks that every figure in the explanation matches the calculation.
