@@ -60,8 +60,8 @@ def create_business(name: str, people, passwords: dict, inbox: str | None = None
     with tenant_session(bid) as db:
         if not db.get(BusinessProfile, bid):
             db.add(BusinessProfile(business_id=bid, owner_fields={
-                "country": "GB", "industry": "Food and drink", "business_type": "Limited company",
-                "assets": "Delivery van", "credit_band": "Good", "purpose": "",
+                "country": "GB", "industry": "Food and drink", "business_type": "limited_company",
+                "assets": "Delivery van", "credit_band": "good", "purpose": "",
             }))
             db.add(Connection(business_id=bid, kind="email", provider="mailpit", status="connected",
                               meta={"address": inbox}))

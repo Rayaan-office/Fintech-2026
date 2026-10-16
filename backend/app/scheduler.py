@@ -16,9 +16,10 @@ from sqlalchemy import select
 from .config import get_settings
 from .connectors import plaid_conn, quickbooks
 from .connectors.common import get_connection, run_once_at_a_time, save_failure
+from .copilot import insights
 from .db import global_session, tenant_session
 from .handlers import run_matching
-from .models import Connection, ConnectionRoute
+from .models import Business, Connection, ConnectionRoute
 from .security import audit
 
 _s = get_settings()
@@ -61,9 +62,12 @@ def read(provider: str, business_id) -> None:
         return
     with tenant_session(business_id) as db:
         matched = run_matching(db, business_id)
-        if any(counts.get(k) for k in changes):  # quiet reads don't fill the activity log
+        changed = any(counts.get(k) for k in changes)
+        if changed:  # quiet reads don't fill the activity log
             audit.record(db, business_id, "scheduler", "connection_synced", subject=provider,
                          details={**counts, **matched})
+    if changed:
+        insights.refresh_soon(business_id)
 
 
 def _poll(provider: str, now: datetime | None) -> list:
@@ -94,6 +98,18 @@ def poll_books(now: datetime | None = None) -> list:
     return _poll("quickbooks", now)
 
 
+def daily_recommendations() -> list:
+    """The once-a-day recommendations run for every business. Returns the businesses checked."""
+    with global_session() as db:
+        businesses = sorted(db.execute(select(Business.id)).scalars(), key=str)
+    for bid in businesses:
+        try:
+            run_once_at_a_time(f"insights:{bid}", lambda bid=bid: insights.run(bid))
+        except Exception:  # one business failing must not stop the others
+            log.exception("daily recommendations failed")
+    return businesses
+
+
 def poll_all() -> None:
     for poll in (poll_banks, poll_books):
         try:
@@ -110,6 +126,8 @@ def start() -> None:
     # One run at a time; a run that is late (the laptop slept) is merged into the next one
     _scheduler.add_job(poll_all, "interval", minutes=1, id="poll", max_instances=1, coalesce=True,
                        next_run_time=datetime.now(UTC) + timedelta(seconds=20))
+    _scheduler.add_job(daily_recommendations, "cron", hour=6, minute=0, id="recommendations", max_instances=1,
+                       coalesce=True)
     _scheduler.start()
     log.info("background schedule started: banks every %s minutes, accounting every %s minutes",
              _s.bank_poll_minutes, _s.books_poll_minutes)

@@ -87,10 +87,10 @@ def entries(db: Session, since: date, until: date) -> list[Entry]:
     return out
 
 
-def profit_and_loss(db: Session, today: date) -> list[dict]:
-    """The last six full months, then this month so far."""
-    start = forecast.add_months(_month(today), -MONTHS)
-    months: dict = {forecast.add_months(start, i): {"sales": 0, "costs": 0} for i in range(MONTHS + 1)}
+def profit_and_loss(db: Session, today: date, count: int = MONTHS) -> list[dict]:
+    """The last six full months (or `count`), then this month so far."""
+    start = forecast.add_months(_month(today), -count)
+    months: dict = {forecast.add_months(start, i): {"sales": 0, "costs": 0} for i in range(count + 1)}
     for e in entries(db, start, today):
         months[_month(e.day)][e.side] += e.amount
     first = db.execute(select(func.min(Record.date)).where(Record.status != "void")).scalar()

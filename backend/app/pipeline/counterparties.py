@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Counterparty, CounterpartyVersion
 
-_SUFFIX = re.compile(r"\b(ltd|limited|plc|llp|llc|inc|co|company|uk|group|the)\b\.?", re.I)
+_SUFFIX = re.compile(r"\b(ltd|limited|plc|llp|llc|inc|co|company|uk|group|the)\b\.?", re.IGNORECASE)
 
 # Detail fields we track for changes, and their placeholder kinds
 TRACKED = {
@@ -50,12 +50,13 @@ def find_or_create(db: Session, business_id, kind: str, name: str, email_domain:
     return cp, True
 
 
-def latest_details(db: Session, counterparty_id) -> dict:
-    """The most recent known value (fingerprint, vault id, masked) for each tracked field."""
-    versions = db.execute(
-        select(CounterpartyVersion).where(CounterpartyVersion.counterparty_id == counterparty_id)
-        .order_by(CounterpartyVersion.seen_at)
-    ).scalars().all()
+def latest_details(db: Session, counterparty_id, until=None) -> dict:
+    """The most recent known value (fingerprint, vault id, masked) for each tracked field.
+    With `until`, the values on record at that moment (before a later change)."""
+    q = select(CounterpartyVersion).where(CounterpartyVersion.counterparty_id == counterparty_id)
+    if until is not None:
+        q = q.where(CounterpartyVersion.seen_at <= until)
+    versions = db.execute(q.order_by(CounterpartyVersion.seen_at)).scalars().all()
     merged: dict = {}
     for v in versions:
         merged.update({k: dict(val, seen_at=v.seen_at.isoformat(), document_id=str(v.source_document_id or ""))

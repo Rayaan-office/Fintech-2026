@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import events
 from ..analytics import forecast, health, ledger
+from ..copilot import wording
 from ..models import Action, Business, Match, PlannedItem, Recommendation, Record
 from ..security import audit
 from ..security.rbac import Perm
@@ -73,10 +74,37 @@ def what_if(body: WhatIfIn, p: Principal = Depends(require(Perm.VIEW_ALL)), db: 
     return forecast.what_if(db, planned, body.excluded_bill_ids, moved)
 
 
+WHY_INSTRUCTIONS = (
+    "Explain to a small business owner why their cash flow changed between the two periods, in two or three short "
+    "sentences: the overall change first, then the two or three biggest reasons with their amounts. If customer "
+    "payments are a reason, say whether invoices that fell due are still unpaid."
+)
+
+
 @router.get("/cash-flow/why")
 def why(period: Literal["month", "30d"] = "month", p: Principal = Depends(require(Perm.VIEW_ALL)),
         db: Session = Depends(tenant_db)):
-    return health.why_cash_changed(db, period=period)
+    """The numbers, plus a short explanation the AI writes from them only (fact-checked)."""
+    w = health.why_cash_changed(db, period=period)
+    m = wording.money
+    facts = {"this period": f"{w['this_period']['from']} to {w['this_period']['to']}",
+             "net cash flow this period": m(w["this_period"]["net_minor"]),
+             "compared with": f"{w['last_period']['from']} to {w['last_period']['to']}",
+             "net cash flow then": m(w["last_period"]["net_minor"]),
+             "change": (f"{m(w['change_minor'])} better" if w["change_minor"] >= 0 else f"{m(-w['change_minor'])} worse"),
+             "reasons, largest first": [
+                 {"reason": r["label"],
+                  "effect on cash": (f"{m(r['change_minor'])} more cash than last period" if r["change_minor"] > 0
+                                     else f"{m(-r['change_minor'])} less cash than last period"),
+                  "biggest items": [f"{i['label']} {m(i['change_minor'])}" for i in r["items"]],
+                  **({"fell due and still unpaid this period": m(r["late_this_period_minor"]),
+                      "fell due and still unpaid last period": m(r["late_last_period_minor"])}
+                     if "late_this_period_minor" in r else {})} for r in w["reasons"][:5]]}
+    text = wording.cached_write(p.business_id, "why_cash", WHY_INSTRUCTIONS, facts, wording.Names(db),
+                                fallback=("Why cash changed", w["sentence"]),
+                                paused=wording.ai_paused(db, p.business_id))
+    w["explanation"] = {"text": text.body, "ai_written": text.ai_written, "redacted_input": text.ai_saw or ""}
+    return w
 
 
 @router.get("/business-health")

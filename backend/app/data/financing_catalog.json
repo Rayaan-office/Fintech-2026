@@ -1,0 +1,96 @@
+{
+  "note": "Sample data for the demo. Providers, rates and rules are illustrative, not real offers.",
+  "products": [
+    {
+      "id": "supplier-terms", "type": "supplier_terms", "provider": "Your suppliers",
+      "product": "Ask suppliers for longer payment terms", "free": true,
+      "min_minor": 10000, "max_minor": 5000000, "min_months": 1, "max_months": 2,
+      "rate_min": 0, "rate_max": 0, "fee_pct": 0, "fee_minor": 0,
+      "rules": {"needs_open_bills": true},
+      "about": "Free, but up to each supplier. Ask before the bill is due."
+    },
+    {
+      "id": "early-payment", "type": "early_payment", "provider": "Your customers",
+      "product": "Collect unpaid invoices sooner (2% early-payment discount)", "free": false,
+      "min_minor": 10000, "max_minor": 5000000, "min_months": 1, "max_months": 1,
+      "rate_min": 0.01, "rate_max": 0.03, "fee_pct": 0, "fee_minor": 0,
+      "rules": {"min_unpaid_invoices_minor": 50000},
+      "about": "Offer customers a small discount for paying now. The cost is the discount."
+    },
+    {
+      "id": "overdraft", "type": "credit_line", "provider": "Northgate Bank (sample)",
+      "product": "Arranged business overdraft", "free": false,
+      "min_minor": 100000, "max_minor": 2500000, "min_months": 1, "max_months": 12,
+      "rate_min": 0.10, "rate_max": 0.18, "fee_pct": 0.01, "fee_minor": 0,
+      "rules": {"min_months_trading": 6, "min_monthly_sales_minor": 400000, "countries": ["GB"],
+                "min_credit_band": "fair"},
+      "about": "Interest only on what you use, for the days you use it."
+    },
+    {
+      "id": "credit-line", "type": "credit_line", "provider": "Flexi Business Finance (sample)",
+      "product": "Business line of credit", "free": false,
+      "min_minor": 200000, "max_minor": 5000000, "min_months": 1, "max_months": 12,
+      "rate_min": 0.14, "rate_max": 0.24, "fee_pct": 0.015, "fee_minor": 0,
+      "rules": {"min_months_trading": 12, "min_monthly_sales_minor": 600000, "countries": ["GB"]},
+      "about": "Draw what you need and repay when cash comes in."
+    },
+    {
+      "id": "fast-loan", "type": "term_loan", "provider": "QuickFund Capital (sample)",
+      "product": "Short-term business loan", "free": false,
+      "min_minor": 300000, "max_minor": 10000000, "min_months": 3, "max_months": 24,
+      "rate_min": 0.12, "rate_max": 0.29, "fee_pct": 0.03, "fee_minor": 0,
+      "rules": {"min_months_trading": 6, "min_monthly_sales_minor": 500000, "countries": ["GB"]},
+      "about": "Fixed monthly repayments. Quick decision, higher cost."
+    },
+    {
+      "id": "bank-loan", "type": "term_loan", "provider": "Northgate Bank (sample)",
+      "product": "Small business loan", "free": false,
+      "min_minor": 500000, "max_minor": 15000000, "min_months": 12, "max_months": 60,
+      "rate_min": 0.075, "rate_max": 0.139, "fee_pct": 0.02, "fee_minor": 0,
+      "rules": {"min_months_trading": 24, "min_monthly_sales_minor": 800000, "countries": ["GB"],
+                "min_credit_band": "good"},
+      "about": "Lower rates for established businesses with steady sales."
+    },
+    {
+      "id": "growth-loan", "type": "term_loan", "provider": "Pennine Commercial Bank (sample)",
+      "product": "Growth loan", "free": false,
+      "min_minor": 2500000, "max_minor": 50000000, "min_months": 12, "max_months": 84,
+      "rate_min": 0.065, "rate_max": 0.11, "fee_pct": 0.015, "fee_minor": 0,
+      "rules": {"min_months_trading": 36, "min_monthly_sales_minor": 3000000, "countries": ["GB"],
+                "business_types": ["limited_company", "partnership"], "min_credit_band": "good"},
+      "about": "For larger plans such as a second site."
+    },
+    {
+      "id": "startup-loan", "type": "term_loan", "provider": "National start-up scheme (sample)",
+      "product": "Government-backed start-up loan", "free": false,
+      "min_minor": 50000, "max_minor": 2500000, "min_months": 12, "max_months": 60,
+      "rate_min": 0.06, "rate_max": 0.06, "fee_pct": 0, "fee_minor": 0,
+      "rules": {"max_months_trading": 36, "countries": ["GB"]},
+      "about": "A fixed 6% a year for businesses trading under 3 years, with free mentoring."
+    },
+    {
+      "id": "invoice-finance", "type": "invoice_finance", "provider": "Ledgerline Invoice Finance (sample)",
+      "product": "Invoice finance", "free": false,
+      "min_minor": 100000, "max_minor": 25000000, "min_months": 1, "max_months": 12,
+      "rate_min": 0.015, "rate_max": 0.03, "fee_pct": 0, "fee_minor": 15000, "advance": 0.85,
+      "rules": {"min_months_trading": 3, "min_unpaid_invoices_minor": 300000, "countries": ["GB"]},
+      "about": "Get up to 85% of your unpaid invoices now; a monthly fee until customers pay."
+    },
+    {
+      "id": "card-advance", "type": "merchant_cash_advance", "provider": "SwipeAdvance (sample)",
+      "product": "Card sales advance", "free": false,
+      "min_minor": 200000, "max_minor": 6000000, "min_months": 1, "max_months": 12,
+      "rate_min": 1.15, "rate_max": 1.35, "fee_pct": 0, "fee_minor": 0, "share_of_card_sales": 0.12,
+      "rules": {"min_months_trading": 4, "min_card_share": 0.2, "min_card_sales_monthly_minor": 300000},
+      "about": "Repaid as a share of your card sales. Easy to get, but usually expensive."
+    },
+    {
+      "id": "asset-finance", "type": "term_loan", "provider": "Dalesway Asset Finance (sample)",
+      "product": "Vehicle and equipment finance", "free": false,
+      "min_minor": 500000, "max_minor": 25000000, "min_months": 12, "max_months": 60,
+      "rate_min": 0.069, "rate_max": 0.129, "fee_pct": 0, "fee_minor": 25000,
+      "rules": {"min_months_trading": 12, "countries": ["GB"], "purposes": ["vehicle", "equipment"]},
+      "about": "Spread the cost of a van or equipment; the item secures the finance."
+    }
+  ]
+}

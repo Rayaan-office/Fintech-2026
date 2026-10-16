@@ -2,21 +2,23 @@
 flowchart TD
   T(["New data arrives,<br/>or the daily check runs"])
   F["<b>Our code finds the facts</b><br/>fixed rules: supplier details changed,<br/>price rise, slow-paying customer,<br/>spending creep, reliance on one customer"]
-  ANY{"<b>Anything new?</b>"}
-  END(["Nothing to show"])
-  R["<b>Rank and remove repeats</b><br/>by money at stake and urgency"]
+  R["<b>Rank and remove repeats</b><br/>by money at stake and urgency;<br/>skip muted kinds; resolve what no longer holds"]
+  ANY{"<b>Anything new<br/>or worse?</b>"}
+  END(["Nothing new to show"])
   W["<b>AI writes the recommendation</b><br/>from the facts only,<br/>names hidden as placeholders"]
-  V{"<b>Fact check</b><br/>do the numbers match the facts?"}
+  V{"<b>Fact check</b><br/>do the figures match the facts?"}
+  TPL["<b>Use our plain template</b><br/>if a rewrite is still wrong,<br/>or AI is paused"]
   S["<b>Show it to the owner</b><br/>numbers behind it, before and after,<br/>and a suggested next step"]
   ACT{"<b>Owner picks the next step?</b><br/>e.g. draft an email to the supplier"}
-  DIS(["Dismissed or kept for later"])
+  DIS(["Dismissed: that kind is muted for that<br/>supplier or customer (never bank details)"])
   G["<b>Approval check</b><br/>see approval levels"]
-  DO(["Carry out the step<br/>and log it"])
+  DO(["Send the email<br/>and log it"])
 
-  T --> F --> ANY
+  T --> F --> R --> ANY
   ANY -- "no" --> END
-  ANY -- "yes" --> R --> W --> V
-  V -- "no, rewrite" --> W
+  ANY -- "yes" --> W --> V
+  V -- "no, rewrite once" --> W
+  V -- "still wrong" --> TPL --> S
   V -- "yes" --> S --> ACT
   ACT -- "no" --> DIS
   ACT -- "yes" --> G --> DO
