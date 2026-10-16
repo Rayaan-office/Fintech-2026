@@ -23,3 +23,6 @@ dist/
 htmlcov/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+
+# Kept locally, not published
+docs/DESIGN.md

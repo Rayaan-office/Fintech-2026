@@ -57,7 +57,7 @@ Every request also passes OpenRouter's guardrails before it reaches any AI provi
 
 ### People and what they can do
 
-Our roles are the essential jobs found in small-business finance, based on the user types in QuickBooks, Xero and Bill.com. In a small business one person often does several of these jobs, so a user can hold more than one role.
+Our roles are the essential jobs found in small-business finance, based on the user types common in accounting and bill-payment software. In a small business one person often does several of these jobs, so a user can hold more than one role.
 
 | Role | Who this is | Can | Cannot |
 |---|---|---|---|

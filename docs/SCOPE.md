@@ -79,8 +79,6 @@ Each recommendation shows the numbers behind it and a suggested next step, such 
 - **Interaction that builds trust:** click any number to see its source document, see exactly what the AI saw, watch documents being processed live, and drag bills or planned costs on the forecast.
 - **Fast everyday use:** a Today briefing, an inbox for approvals with keyboard shortcuts, voice questions, phone-to-computer receipt handoff and a privacy mode that hides amounts.
 
-See [Product design](DESIGN.md) for details.
-
 ### 8. Trust and control
 - **Approval levels:** the AI can read and suggest freely; money and outside actions need people (see [Security](SECURITY.md)).
 - **Pause AI switch:** the owner can stop all automatic AI actions at once.
