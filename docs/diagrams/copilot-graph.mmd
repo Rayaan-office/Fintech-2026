@@ -1,26 +1,25 @@
 %%{init: {"flowchart": {"wrappingWidth": 260}}}%%
 flowchart TD
   Q(["Owner asks a question<br/>“How is the business doing?”<br/>“Can I afford a new van next month?”"])
-  U["<b>Understand the question</b><br/>AI works out what is needed"]
-  SAFE{"<b>Allowed for this user?</b>"}
+  U["<b>Understand the question</b><br/>names hidden as placeholders;<br/>AI picks from a fixed list of read-only tools"]
+  SAFE{"<b>Allowed for this user?</b><br/>about this business, and tools<br/>their role allows"}
   NO(["Politely decline"])
   D["<b>Look up the facts</b><br/>read-only: cash and forecast, profit and spending,<br/>who owes you, supplier history, why cash changed,<br/>what-if, financing options, recommendations"]
   W["<b>Write the answer</b><br/>AI explains in plain words"]
-  V{"<b>Fact check</b><br/>do the numbers match our records?"}
+  V{"<b>Fact check</b><br/>does every figure match the facts?"}
+  F["<b>Show the figures plainly</b><br/>if a rewrite is still wrong"]
+  A(["Show the answer<br/>with a chart or table, sources<br/>and follow-up questions"])
   ACT{"<b>Suggests an action?</b><br/>e.g. remind a customer to pay"}
-  A(["Show the answer"])
-  G{"<b>Needs approval?</b><br/>see approval levels"}
-  P["<b>Wait for a person</b><br/>approve or reject"]
-  DO(["Carry out the action<br/>and log it"])
+  B["<b>A button on the answer</b><br/>a draft email is made only<br/>when the person clicks it"]
+  P["<b>Wait for approval</b><br/>see approval levels"]
+  DO(["Send the email<br/>and log it"])
 
   Q --> U --> SAFE
   SAFE -- "no" --> NO
   SAFE -- "yes" --> D --> W --> V
-  V -- "no, rewrite" --> W
+  V -- "no, rewrite once" --> W
+  V -- "still wrong" --> F --> A
   V -- "yes" --> ACT
   ACT -- "no" --> A
-  ACT -- "yes" --> G
-  G -- "no" --> DO
-  G -- "yes" --> P
+  ACT -- "yes" --> B --> P
   P -- "approved" --> DO
-  P -- "rejected" --> A

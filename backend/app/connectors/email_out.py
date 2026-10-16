@@ -38,9 +38,15 @@ def check(to: str, subject: str, body: str) -> None:
             raise SendRefused("We never send to a bills inbox.")  # it would come straight back in
 
 
-def send(to: str, subject: str, body: str, *, from_address: str, from_name: str) -> str:
-    """Send one plain-text email. Returns its Message-ID."""
+MAX_ATTACHMENT = 5 * 1024 * 1024
+
+
+def send(to: str, subject: str, body: str, *, from_address: str, from_name: str,
+         attachments: list[tuple[str, str, bytes]] | None = None) -> str:
+    """Send one plain-text email, with optional (filename, type, bytes) attachments. Returns its Message-ID."""
     check(to, subject, body)
+    if any(len(data) > MAX_ATTACHMENT for _, _, data in attachments or []):
+        raise SendRefused("The attachment is too large.")
     m = EmailMessage()
     m["From"] = formataddr((from_name, from_address))
     m["To"] = to
@@ -49,6 +55,9 @@ def send(to: str, subject: str, body: str, *, from_address: str, from_name: str)
     m["Message-ID"] = make_msgid(domain=from_address.rsplit("@", 1)[-1])
     m["Auto-Submitted"] = "auto-generated"  # stops out-of-office replies bouncing back and forth
     m.set_content(body)
+    for filename, mime, data in attachments or []:
+        maintype, subtype = mime.split("/", 1)
+        m.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     with smtplib.SMTP(_s.mailpit_smtp_host, _s.mailpit_smtp_port, timeout=10) as smtp:
         smtp.send_message(m)
     return m["Message-ID"]

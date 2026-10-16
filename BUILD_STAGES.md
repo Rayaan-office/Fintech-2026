@@ -15,7 +15,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 4 | Bank connector (Plaid) | Done |
 | 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Done |
-| 7 | Approvals, recommendations, financing and assistant | Approval engine done |
+| 7 | Approvals, recommendations, financing and assistant | Done |
 | 8 | Frontend: see stages F3–F6 below | Not started |
 | 9 | Hardening and submission material | Not started |
 
@@ -138,13 +138,53 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
     - stale suggestions stayed waiting.
   - Found while building: the ledger could read another business's settings, and a what-if could be a penny out.
 
-## Stage 7: Approvals, recommendations, financing and assistant
+## Stage 7: Approvals, recommendations, financing and assistant (done)
 
-- Remaining action handler: lender pack sharing. (Sending reminders and supplier emails was built in Stage 2, adding approved bills to the accounting software in Stage 5; Stage 7 drafts the emails.)
-- Recommendations agent (rules first, AI words them, fact-checked), dismiss and mute.
-- Business profile, financing catalog, matching, cost, forecast effect, readiness, lender pack PDF.
-- Chat assistant (LangGraph) with read-only tools and fact-checked answers.
-- Tests: rule triggers, fact checks, approval paths, assistant tool limits.
+- AI wording, fact-checked (`copilot/wording.py`), shared by everything below:
+  - the AI sees facts as short labelled lines, with suppliers and customers as stable placeholders and any other personal detail hidden;
+  - money in the answer must be money from the facts, and a percentage a percentage from the facts; every placeholder must be one we sent;
+  - one rewrite, told what was wrong; after that, or while AI is paused, our plain template is shown.
+- Recommendations agent (`analytics/rules.py`, `copilot/insights.py`, a LangGraph workflow):
+  - five rules: supplier details changed (bank details: urgent, never muted), price rise (by bill and by price per unit), slow payer (including getting slower), spending creep (including a new monthly charge), reliance on one customer;
+  - ranked, repeats removed, muted kinds skipped, findings that no longer hold resolved;
+  - runs after each sync that brings changes, after a document is approved, once a day, and on request;
+  - the next step drafts an email (AI-worded, fact-checked) that waits for approval, sent to the address on record, or the one before a change.
+- Why cash changed and the financing summary are now worded by the AI from the numbers and checked; the same facts give the same words without asking again.
+- Financing (`analytics/financing.py`, `data/financing_catalog.json`):
+  - business profile: automatic values from our records, the owner's corrections kept next to them, and details only the owner adds;
+  - 11 sample products; eligibility with near misses ("available after 18 more months of trading");
+  - the need from the forecast (shortfall plus 5%) or an amount the owner types in; cost at the middle of the rate range, with the range; repayments run through the forecast;
+  - ranked: free first, then those that keep cash above the safety level, by cost; readiness checklist.
+- Lender pack (`analytics/lender_pack.py`): a PDF with the profile, 12 months of profit and loss, unpaid invoices, the forecast and the readiness checklist. Downloading is open to finance managers and owners. Sharing stores the PDF and creates an outside action; a business owner approves, and exactly that PDF is emailed.
+- Chat assistant (`copilot/assistant.py`, `copilot/tools.py`, a LangGraph workflow):
+  - eight read-only tools, at most three per question, run in a transaction Postgres keeps read-only;
+  - tools the role doesn't allow are left out (financing for bookkeepers), and off-topic questions are declined;
+  - every figure checked against the tool results, then the figures shown plainly if the AI still gets one wrong;
+  - charts, tables and sources come from our code;
+  - a suggested reminder or supplier email becomes a draft only when clicked;
+  - conversations are private to each person.
+- API:
+  - `/api/recommendations` (list, refresh, dismiss, next step);
+  - `/api/financing`, `/api/financing/quote` and `/api/business-profile` (owners edit);
+  - `/api/lender-pack.pdf` and `/api/lender-pack/share`;
+  - `/api/ask`, `/api/ask/threads` and `/api/ask/messages/{id}/act`.
+- Live check against the real AI on the dev company:
+  - all 6 recommendations were worded by the AI and passed the fact check, including the fraud drill (urgent) and Acme's flour at £45.00 → £53.10 (+18%);
+  - the assistant answered who owes the most, whether Acme raised prices, why cash changed and whether a £18,000 van is affordable;
+  - the financing summary found the £2,495 dip on 2 December and the free option that covers it.
+- Tests: 68 new, 349 backend tests pass.
+  - The integration tests run on the demo story: the rules find exactly its built-in patterns and nothing else, with figures checked against the story. They also cover the agent, financing and the lender pack, and the assistant's tool limits, roles and private threads.
+  - Also: unit tests (fact check, financing maths), isolation tests and 8 regression tests.
+- Bugs fixed:
+  - the same address read differently was raised as a change;
+  - one bill's bank and email changes were raised twice;
+  - one bill at the new price hid Acme's price rise;
+  - profile labels ("Good") crashed matching;
+  - repayments fell inside the shortfall, and borrowing exactly the gap fell short by the interest;
+  - the fact check took a date's "1" as £1.00;
+  - CloudDesk's small creep fell under a £30 floor;
+  - getting slower was diluted by older invoices.
+- Found in the live check: the AI ran out of room before answering (token allowance raised), and "Acme" in a question wasn't hidden (a short name now becomes its placeholder, or both placeholders when two suppliers share it).
 
 ## Stage 9: Hardening and submission
 

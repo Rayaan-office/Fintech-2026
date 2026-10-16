@@ -107,7 +107,7 @@ All figures come from our single record of money in and out. Each item is given 
 2. Split the change into groups: customer payments (noting how much that fell due is still unpaid, which shows late payment), card sales, supplier costs, salaries, rent, tax, financing and one-off items. The groups add up exactly to the change.
 3. Rank the groups by how much each moved cash, and find the largest single items within each.
 4. The AI writes a short explanation **from these numbers only**.
-5. Our code then checks that every figure in the explanation matches the calculation.
+5. Our code then checks that every figure in the explanation matches the calculation. If it doesn't after one rewrite, we show our own plain sentence instead.
 
 ## 8. What-if: "Can I afford this?"
 
@@ -123,20 +123,20 @@ All figures come from our single record of money in and out. Each item is given 
 An AI agent reviews the business's own records whenever new data arrives and once a day.
 
 1. **Our code finds the facts.** Fixed rules (below) look for patterns and record the numbers and documents behind each one.
-2. **Rank and remove repeats.** Findings are ranked by money at stake and urgency. A finding already shown is not shown again unless it gets worse.
+2. **Rank and remove repeats.** Findings are ranked by money at stake and urgency. A finding already shown is not shown again unless it gets worse (more urgent, or 20% more at stake). One that no longer holds, such as a fraudulent bill that was turned down, is marked resolved.
 3. **The AI writes the recommendation** from the finding only. Names appear as placeholders such as `[SUPPLIER_1]`, and our code puts the real names back afterwards.
-4. **Fact check.** Every figure in the text must match the finding.
-5. **Show it with a next step.** Any action it leads to, such as emailing a supplier, goes through the approval levels.
+4. **Fact check.** Every figure in the text must match the finding: money must be money from the finding and a percentage a percentage from it (rounding to the pound is allowed), and every placeholder must be one we sent. The AI gets one rewrite, told exactly what was wrong; after that, or while AI is paused, we show our own plain wording.
+5. **Show it with a next step.** Clicking the next step drafts an email (also worded by the AI and fact-checked), which waits in the inbox for approval. It always goes to the address on record; when details have changed, to the address on record before the change.
 
 | Recommendation | When it is raised | Suggested next step |
 |---|---|---|
-| Supplier details changed | The address, email, phone or bank details on a new bill differ from the supplier's record. We keep every past version, so we can show before and after. | Confirm with the supplier using the contact details already on record. Bank-detail changes also raise a fraud warning (section 11). |
-| Supplier price rise | A bill, or a price on one of its lines, is 10% or more above that supplier's usual level (the median of the last 3 months), or a repeating charge goes up | Draft an email asking about the increase, or compare with other suppliers |
-| Slow-paying customer | Across at least 3 invoices, a customer pays 7 or more days after the due date on average, or is getting slower | Ask for a deposit or payment upfront, shorten payment terms, offer an early-payment discount, or send a reminder before the due date |
-| Spending creep | A spending category has risen 3 months in a row, or a new repeating charge appears | Review the cost |
+| Supplier details changed | The address, email, phone or bank details on a new bill (approved or still waiting) differ from the supplier's record. We keep every past version, so we can show before and after. The same address read slightly differently is not a change. All the changes on one bill are one finding; bills sharing the same new bank details are one finding. | Confirm with the supplier using the contact details already on record. Bank-detail changes also raise a fraud warning (section 11). |
+| Supplier price rise | The supplier's latest two bills (the latest, for a monthly supplier) are 10% or more above its usual level (the median of the 3 months before), or a price per unit on a bill is 10% or more above that line's usual price. Where past bills show only line totals, the usual unit price is the largest price that most past totals are whole multiples of (8 bags at £45.00 is £360.00). A charge that rises step by step every month is spending creep instead. | Draft an email asking about the increase, or compare with other suppliers |
+| Slow-paying customer | Across at least 3 invoices, a customer pays 7 or more days after the due date on average, or their invoices of the last 60 days are paid 7 or more days late and 3 or more days later than before | Ask for a deposit or payment upfront, shorten payment terms, offer an early-payment discount, or send a reminder before the due date (a reminder is drafted when invoices are overdue) |
+| Spending creep | A spending category rose in each of the last 3 full months, by 10% or more and at least £10 a month in all, or a new supplier has billed about once a month for the last 100 days | Review the cost |
 | Reliance on one customer | One customer brought in more than 30% of sales over the last 90 days | For information |
 
-The owner can dismiss a recommendation; dismissing it mutes that kind of recommendation for that supplier or customer.
+The owner can dismiss a recommendation; dismissing it mutes that kind of recommendation for that supplier or customer. Changed bank details are never muted: a different change is always shown.
 
 ## 10. Financing options
 
@@ -154,12 +154,12 @@ The owner can correct any automatic value. We keep the original next to the corr
 
 ### Financing catalog
 
-A table of 10–15 products loaded from a data file. Each product has a type, provider, amount range, term range, rate range, fees and eligibility rules, such as minimum months trading, minimum monthly sales, needs card sales, needs unpaid invoices, and countries served. In our demo the providers and rates are sample data. In production the catalog would be kept up to date by our team, including government-backed schemes, or supplied by a lender marketplace partner.
+A table of 11 products loaded from a data file. Each product has a type, provider, amount range, term range, rate range, fees and eligibility rules, such as minimum months trading, minimum monthly sales, needs card sales, needs unpaid invoices, and countries served. In our demo the providers and rates are sample data. In production the catalog would be kept up to date by our team, including government-backed schemes, or supplied by a lender marketplace partner.
 
 ### Matching steps
 
 1. **Work out the need.**
-   - From the forecast: the amount is the safety level minus the lowest expected balance, and the length is from the first day below the safety level until cash recovers.
+   - From the forecast: the amount is the safety level minus the lowest expected balance, plus 5% for the cost of borrowing, rounded up to £100. The length runs from the first day below the safety level until cash recovers, so repayments start after that.
    - From a what-if: the amount missing at the lowest point.
    - From the owner: an amount and purpose typed in, such as "£20,000 for a van".
 2. **Check eligibility.** Each product's rules are checked against the profile. Products the business doesn't qualify for are removed. Near misses are shown with the reason, for example "available after 3 more months of trading".
@@ -167,15 +167,15 @@ A table of 10–15 products loaded from a data file. Each product has a type, pr
 
    | Product | How cost is worked out |
    |---|---|
-   | Ask a supplier for longer terms | Free |
-   | Chase or discount early payment from customers | The discount given, if any |
-   | Short-term loan | Standard monthly repayment formula, plus fees |
-   | Line of credit | Interest only on the amount and days used, plus fees |
-   | Invoice financing | Monthly fee times invoice amount, with part of each invoice paid upfront |
-   | Merchant cash advance | Fixed multiple of the amount, repaid as a share of card sales; we estimate how long that takes and show the yearly cost, which is usually high |
+   | Ask a supplier for longer terms | Free; up to the bills currently unpaid |
+   | Discount early payment from customers | The discount given (2% in the sample catalog); up to the unpaid invoices |
+   | Loan (short-term, bank, start-up, vehicle and equipment) | Standard monthly repayment formula, plus fees, which come off the money received |
+   | Line of credit or overdraft | Interest only on the amount and days used, plus fees; the amount is repaid at the end |
+   | Invoice financing | Monthly fee times the invoices used, until customers usually pay; up to 85% of unpaid invoices paid upfront |
+   | Merchant cash advance | Fixed multiple of the amount, repaid as 12% of card sales; we estimate how long that takes and show the yearly cost, which is usually high |
 
 4. **Check the effect on the forecast.** The money in and the repayments are added to a copy of the forecast, and we report whether cash stays above the safety level.
-5. **Rank.** Free options first, then options that close the gap, by total cost.
+5. **Rank.** Options the business qualifies for first: free options, then options that keep cash above the safety level, each by total cost.
 6. **Readiness checklist.** What a lender usually looks at: months of trading, sales trend, share of overdue invoices, existing repayments compared with monthly cash coming in, and how up to date the books are. Each item says what would improve it. It is not a credit score.
 7. **Summary.** The AI writes a short summary from these numbers, which is fact-checked.
 
@@ -215,4 +215,10 @@ The chat assistant answers using read-only tools that run the calculations above
 | Financing options | "How could I cover a shortfall in December?" |
 | Recommendations | "Is there anything I should look at?" |
 
-Personal details in the question are hidden before it reaches the AI, and tool results use placeholders in the same way. Every figure in the answer is checked against the tool results before it is shown.
+How it stays safe and correct:
+- **Names hidden.** Supplier and customer names in the question (including a short form such as "Acme") become placeholders, other personal details are hidden as in section 1, and tool results use the same placeholders.
+- **Fixed, read-only tools.** The AI can only pick tools from this list, at most three per question. They run in a database transaction that refuses any change and sees one business. Tools the person's role doesn't allow (financing, for bookkeepers) are left out and the answer says so. Questions not about the business are declined.
+- **Fact check.** Every figure in the answer must come from the tool results or the question, as in section 9. After one rewrite we show the figures in plain form instead.
+- **Charts and tables from our code.** The chart or table under an answer and its sources come from the tool results, never from the AI.
+- **Actions only on a click.** The AI may suggest a payment reminder or a supplier email. It becomes a draft only when the person clicks it, and then waits for approval.
+- **Private history.** Each conversation belongs to one person; the AI sees only that conversation's earlier turns, as placeholders.

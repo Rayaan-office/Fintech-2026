@@ -7,7 +7,7 @@ import uuid
 from tests.backend.conftest import PASSWORD, people
 
 from app.db import tenant_session
-from app.demo import story
+from app.demo import emails, story
 from app.models import Account, Counterparty, Record
 from app.pipeline.counterparties import find_or_create
 from app.seed import create_business
@@ -44,13 +44,21 @@ def load(bid, s: story.Story | None = None) -> story.Story:
                           due_date=inv.due, paid_date=inv.paid_on, status="paid" if inv.paid_on else "open",
                           counterparty_id=cps[inv.customer].id, reference=inv.number, category="sales",
                           tax_minor=inv.total - net, external={"qbo_type": "Invoice", "qbo_id": inv.number}))
+        # The demo emails Acme's latest bill: it arrives as a document we read, with a price per unit on
+        # each line. The rest are in the books, whose lines carry only a description and an amount.
+        emailed = emails.emailed_bills(s)["acme"].number
         for b in s.bills:
-            db.add(Record(business_id=bid, source="quickbooks", source_ref=f"story:Bill:{b.number}",
-                          kind="bill", direction="out", amount_minor=b.total, open_minor=0 if b.paid_on else b.total,
-                          currency="GBP", date=b.issue, due_date=b.due, paid_date=b.paid_on,
-                          status="paid" if b.paid_on else "open", counterparty_id=cps[b.supplier_key].id,
-                          reference=b.number, category=CATEGORY[b.supplier_key], tax_minor=b.total - b.subtotal,
-                          external={"qbo_type": "Bill", "qbo_id": b.number}))
+            doc = b.number == emailed
+            db.add(Record(business_id=bid, source="document" if doc else "quickbooks",
+                          source_ref=f"story:Bill:{b.number}", kind="bill", direction="out", amount_minor=b.total,
+                          open_minor=0 if b.paid_on else b.total, currency="GBP", date=b.issue, due_date=b.due,
+                          paid_date=b.paid_on, status="paid" if b.paid_on else "open",
+                          counterparty_id=cps[b.supplier_key].id, reference=b.number,
+                          category=CATEGORY[b.supplier_key], tax_minor=b.total - b.subtotal,
+                          lines=[{"description": n, "amount_minor": q * p,
+                                  **({"quantity": str(q), "unit_price_minor": p} if doc else {})}
+                                 for n, q, p in b.lines],
+                          external={} if doc else {"qbo_type": "Bill", "qbo_id": b.number}))
         acct = Account(business_id=bid, source="plaid", external_id=f"acct-{bid}", name="Business Current Account",
                        currency="GBP", balance_minor=story.current_balance(s))
         db.add(acct)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from . import actions, archive, events
 from .analytics import matching
 from .connectors import quickbooks
-from .models import Action, Business, Connection, Counterparty, Document, Match, Record
+from .models import Action, Business, Connection, Counterparty, Document, Match, Recommendation, Record
 from .pipeline import counterparties, extract
 from .security import audit
 
@@ -47,7 +47,8 @@ def _approve_document(db: Session, action: Action, actor: str) -> dict:
         reference=f.get("reference") or None, description=(f.get("counterparty_name") or "")[:500],
         category=(f.get("category_hint") or (cp.category if cp else None) or None),
         document_id=doc.id, tax_minor=extract.to_minor(f.get("tax")),
-        lines=[{"description": li.get("description"), "amount_minor": extract.to_minor(li.get("amount"))}
+        lines=[{"description": li.get("description"), "amount_minor": extract.to_minor(li.get("amount")),
+                "quantity": li.get("quantity") or None, "unit_price_minor": extract.to_minor(li.get("unit_price"))}
                for li in f.get("line_items", [])][:200],
     )
     if cp and not cp.category and rec.category:
@@ -67,6 +68,9 @@ def _approve_document(db: Session, action: Action, actor: str) -> dict:
                         effects=["Create the bill in QuickBooks", "Attach the original document"],
                         amount_minor=total)
     events.publish(doc.business_id, "document", {"id": str(doc.id), "status": "approved"})
+    from .copilot import insights  # new data: check for recommendations once this is saved
+
+    insights.refresh_after_commit(db, doc.business_id)
     return {"record_id": str(rec.id)}
 
 
@@ -147,7 +151,9 @@ def _send_email(db: Session, action: Action, actor: str) -> dict:
     cp = db.get(Counterparty, UUID(p["counterparty_id"]))
     if not cp or cp.kind != EMAIL_TO[action.type]:
         raise actions.HTTPException(409, "This email isn't addressed to the right kind of contact.")
-    contact = counterparties.latest_details(db, cp.id).get("email") or {}
+    # Checking changed details: write to the address on record before the change
+    until = datetime.fromisoformat(p["contact_as_of"]) if p.get("contact_as_of") else None
+    contact = counterparties.latest_details(db, cp.id, until=until).get("email") or {}
     to = vault_values(action.business_id, [contact["vault"]]).get(contact["vault"]) if contact.get("vault") else None
     if not to:
         raise actions.HTTPException(409, f"We don't have an email address on record for {cp.display_name}.")
@@ -161,11 +167,40 @@ def _send_email(db: Session, action: Action, actor: str) -> dict:
     except email_out.SendRefused as e:
         raise actions.HTTPException(409, str(e))
     events.publish(action.business_id, "email_sent", {"action_id": str(action.id)})
+    if p.get("recommendation_id"):
+        rec = db.get(Recommendation, UUID(p["recommendation_id"]))
+        if rec and rec.status == "new":
+            rec.status = "done"
     return {"sent_to": contact.get("display"), "message_id": message_id}
 
 
 for _type in EMAIL_TO:
     actions.handler(_type)(_send_email)
+
+
+def _share_lender_pack(db: Session, action: Action, actor: str) -> dict:
+    """Email the lender pack exactly as the approver saw it (stored when it was prepared)."""
+    from .connectors import email_out
+
+    p = action.payload
+    pdf = archive.get(p["object_key"], p["sha256"])
+    conn = db.execute(select(Connection).where(Connection.kind == "email")).scalar_one_or_none()
+    inbox = (conn.meta or {}).get("address") if conn else None
+    if not inbox:
+        raise actions.HTTPException(409, "Connect the email inbox first.")
+    biz = db.get(Business, action.business_id)
+    body = (f"Hello {p.get('lender_name') or ''},\n\nPlease find attached the lender pack for {biz.name}: our business "
+            "profile, profit and loss for the last 12 months, unpaid invoices and our cash forecast, prepared from "
+            f"our records on {p['prepared_on']}.\n\nKind regards,\n{biz.name}").replace("Hello ,", "Hello,")
+    try:
+        message_id = email_out.send(p["email"], f"Lender pack: {biz.name}", body, from_address=inbox,
+                                    from_name=biz.name, attachments=[(p["filename"], "application/pdf", pdf)])
+    except email_out.SendRefused as e:
+        raise actions.HTTPException(409, str(e))
+    return {"sent_to": p["email"], "message_id": message_id}
+
+
+actions.handler("share_lender_pack")(_share_lender_pack)
 
 
 # ── Matching ───────────────────────────────────────────────────────────────

@@ -45,6 +45,16 @@ def tenant_session(business_id: UUID | str) -> Iterator[Session]:
 
 
 @contextmanager
+def read_only_session(business_id: UUID | str) -> Iterator[Session]:
+    """Like tenant_session, but Postgres refuses any change: used for the assistant's tools."""
+    with AppSession() as db:
+        with db.begin():
+            db.execute(text("SET TRANSACTION READ ONLY"))
+            _set_tenant(db, business_id)
+            yield db
+
+
+@contextmanager
 def global_session() -> Iterator[Session]:
     """A transaction for tables that are not tied to one business (users, sign-in sessions)."""
     with AppSession() as db:
