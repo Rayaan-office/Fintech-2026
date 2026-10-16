@@ -1,6 +1,6 @@
 # Architecture
 
-This document shows how our system fits together and how data moves through it. For what the app does, see [Project scope](SCOPE.md). For how each step works, see [Core algorithms](ALGORITHMS.md). For how we protect data, see [Security](SECURITY.md). For how the app looks and feels, see [Product design](DESIGN.md).
+This document shows how our system fits together and how data moves through it. For what the app does, see [Project scope](SCOPE.md). For how each step works, see [Core algorithms](ALGORITHMS.md). For how we protect data, see [Security](SECURITY.md).
 
 ## The big picture
 
@@ -66,7 +66,7 @@ Anyone with permission can compare any extracted record with its original docume
 
 | Part | Technology |
 |---|---|
-| App (what users see) | TypeScript, React, shadcn/ui, Tailwind CSS, Lucide icons, Motion (animation); see [Product design](DESIGN.md) |
+| App (what users see) | TypeScript, React, shadcn/ui, Tailwind CSS, Lucide icons, Motion (animation) |
 | Server | Python, FastAPI |
 | AI workflow | LangGraph (the three workflows above) |
 | AI model | Not tied to one model. All requests go through OpenRouter, limited to providers that don't keep or train on our data. A second, different model gives the independent opinion. |
