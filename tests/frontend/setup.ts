@@ -25,6 +25,13 @@ if (typeof window.ResizeObserver === "undefined") {
   } as unknown as typeof ResizeObserver;
 }
 
+// Toasts (sonner) capture the pointer for swipe-to-dismiss
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+  Element.prototype.hasPointerCapture = () => false;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

@@ -9,7 +9,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | Stage | What | Status |
 |---|---|---|
 | 0 | Foundation and document pipeline | Done |
-| 1 | Frontend: see stages F1–F6 below | F1–F2 done; F3–F6 drafted |
+| 1 | Frontend: see stages F1–F6 below | F1–F3 done; F4–F6 drafted |
 | 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Done |
@@ -156,14 +156,14 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 |---|---|---|---|
 | F1 | Setup, design tokens, app shell, sign-in and two-step | 0 | Done |
 | F2 | Shared components and test setup | 0 | Done |
-| F3 | Inbox, documents review, activity, connections | 0, 2–5 | Drafted |
+| F3 | Inbox, documents review, activity, connections | 0, 2–5 | Done |
 | F4 | Home, cash flow, business health | 6 | Drafted |
 | F5 | Recommendations, financing, Ask (chat) | 7 | Drafted |
 | F6 | Interaction features and end-to-end journeys | All | Drafted (search, shortcuts dialog) |
 
 "Drafted" means page layouts and data hooks exist but have not been tried against real endpoints. Each stage finishes them: connect to the real API, add tests, check the screens.
 
-Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs and logs), `/api/business-health`, and document pages served as images (`pages[]`), because our CSP blocks showing PDFs inside the page.
+Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs and logs), and each PDF page served as an image at `GET /api/documents/{id}/pages/{n}` (0-based, same access check as the original), because our CSP blocks showing PDFs inside the page.
 
 ### F1: Setup, design tokens, app shell, sign-in
 
@@ -178,13 +178,19 @@ Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs a
 - Money (pence smaller, privacy mode), approval badge, confirmation card, AI label with "What the AI saw", empty, loading and error states, number count-up, status dot, initials, help hints, chart with table view.
 - Vitest tests for each component; Playwright set up with a sign-in journey.
 
-### F3: Inbox, documents, activity, connections
+### F3: Inbox, documents, activity, connections (done)
 
-- Inbox tabs (to review, needs approval, done) with confirmation cards, "1 of 2 approvals", undo messages.
-- Document review: original on the left with highlights, extracted fields on the right, corrections, live processing journey, "What the AI saw".
-- Activity timeline with filters, "Log intact" badge and CSV export.
-- Connections cards: status, last sync, connect, sync and reconnect; QuickBooks sign-in.
-- Upload and in-app photo (jscanify); "My receipts" for employees.
+- Types and hooks now match the real routes (`inbox`, `documents`, `activity`, `connections`, `auth`); approval cards use the server's action as it is, including who must approve, `why_not` and `can_undo`.
+- Live updates: the shell listens to `/api/events` and refetches only what each kind of event affects, so documents move through their steps on screen and the inbox and connection cards update by themselves.
+- Inbox: To review, Needs approval and Done tabs with counts; approve, reject and cancel on the card; "1 of 2 approvals" with the first approver's name; Undo in the toast and on the Done tab for small changes; quick approval (keyboard or ticked rows) only for one-person changes; a notification link opens its action. An approval about a document shows its card above the document.
+- Document review: the original on the left (photos as they are; PDF pages from the page-image address, otherwise a link to the original) with found values highlighted; what we read on the right with plain labels; warnings and why it needs a person; corrections send only the changed fields, and saving a document waiting for review sends it for approval; Read it again; sender checks; the processing journey built from the timeline; "What the AI saw" with each AI reading's result. Warnings sit once at the top, above the decision; the card being decided drops reasons that repeat them, and other approvals on the same document fold away. The journey folds to one line once every step went well.
+- Documents list with filters (needs a check, waiting, reading), the live step and warnings, `?open=<id>` links, and a simple list on phones.
+- Activity: the log in plain words with who acted, filters by who (on the server) and by topic and words, older pages on demand, "Log intact" from the verify endpoint, and CSV download.
+- Connections: a card for the email inbox, payment platform, bank and accounting software with status, last sync, what the last sync read and the API's last error; connect, sync, reconnect and disconnect (with a check first); the bills inbox address with copy; balances we read. QuickBooks connects through a plain link to `/connect/quickbooks/start`, and each `?qbo=` result gets its own message before the address is tidied. The bank connects through the sandbox connect endpoint.
+- Upload (15 MB, the file types the server accepts; camera photos marked as photos) and My receipts for employees, using the documents endpoints, which return only their own.
+- Dev proxy also forwards `/connect/` (anchored, so the `/connections` page stays with the app).
+- Not done: the in-app photo with jscanify (phones use the camera through the file picker for now); Plaid Link (there are no Link start and exchange endpoints yet).
+- Tests: 41 new Vitest tests (inbox, documents and review, activity, connections, my receipts), shared fixtures copied from the API's shapes; 76 frontend tests pass. Checked in the browser against the running API at desktop and phone widths, light and dark. Bugs found in that check: the `/connect` proxy rule caught the `/connections` page, QuickBooks result messages were lost on a fresh page load, and long account names pushed the phone layout off screen.
 
 ### F4: Home, cash flow, business health
 

@@ -48,22 +48,40 @@ export type TotpSetup = { otpauth_uri: string; secret: string };
 
 export type RecordRef = { id: string; kind: string; label: string; href?: string };
 
-export type Approval = { user_id: string; name: string; at: string };
+export type Approval = { user_id?: string; name: string; at: string };
 
-/** Everything a confirmation card needs; produced by the server for each pending action. */
-export type Confirmation = {
-  action_id: string;
-  action_type: string;
-  title: string;
+export type ActionStatus = "pending" | "executed" | "rejected" | "cancelled" | "failed" | "undone";
+
+/** A change waiting for (or past) its approvals, exactly as the server describes it. */
+export type Action = {
+  id: string;
+  type: string;
+  type_label: string;
   level: ApprovalLevel;
+  level_label: string;
+  status: ActionStatus;
+  summary: string;
   effects: string[];
-  records: RecordRef[];
-  who_must_approve: string;
-  approvals_required: number;
-  approvals: Approval[];
-  approve_permission: string;
-  amount_minor?: number | null;
+  reasons: string[];
+  amount_minor: number | null;
+  /** "suggested by AI" or "prepared by <name>". */
+  requested_by: string;
+  approvals: { name: string; decision: string; at: string }[];
+  required_approvals: number;
+  /** Who must approve, in plain words. */
+  approvers: string;
+  can_approve: boolean;
+  /** Why this person can't approve, when they can't. */
+  why_not: string | null;
+  can_undo: boolean;
+  document_id: string | null;
+  result: Record<string, unknown> | null;
+  created_at: string;
+  decided_at: string | null;
 };
+
+/** Everything a confirmation card needs: the server's pending action. */
+export type Confirmation = Action;
 
 export type AiAnswer = { text: string; redacted_input: string };
 
@@ -85,19 +103,21 @@ export type HomeSummary = {
 
 export type InboxTab = "to_review" | "needs_approval" | "done";
 
-export type InboxItem = {
+/** A document the pipeline couldn't finish on its own. */
+export type InboxDocument = {
+  kind: "document";
   id: string;
-  tab: InboxTab;
-  sentence: string;
-  level: ApprovalLevel;
-  why: string;
+  summary: string;
+  reasons: string[];
+  warnings: DocumentWarning[];
   created_at: string;
-  counterparty: string | null;
-  document_id: string | null;
-  confirmation: Confirmation | null;
+  level: ApprovalLevel;
+  level_label: string;
 };
 
-export type Inbox = { items: InboxItem[]; counts: Record<InboxTab, number> };
+export type InboxItem = InboxDocument | (Action & { kind?: undefined });
+
+export type Inbox = { items: InboxItem[]; counts: { to_review: number; needs_approval: number } };
 
 // Cash flow
 
@@ -183,56 +203,90 @@ export type Financing = {
 
 // Documents
 
-export type DocumentStatus = "processing" | "needs_review" | "done" | "failed";
-export type DocumentStep = { key: string; label: string; state: "pending" | "active" | "done" | "retry" | "failed" };
+export type DocumentStatus = "received" | "queued" | "processing" | "review" | "awaiting_approval" | "approved" | "rejected";
+
+export type DocumentWarning = { kind: string; label: string; detail?: string };
 
 export type DocumentSummary = {
   id: string;
   filename: string;
-  kind: "bill" | "invoice" | "receipt" | "statement" | "other";
-  source: string;
-  received_at: string;
+  source: "email" | "upload" | "photo" | "statement";
   status: DocumentStatus;
+  stage: string;
+  stage_label: string;
+  doc_type: string | null;
   counterparty: string | null;
   total_minor: number | null;
-  steps: DocumentStep[];
+  currency: string;
+  due_date: string | null;
+  warnings: DocumentWarning[];
+  created_at: string;
 };
 
-export type ExtractedField = {
-  key: string;
-  label: string;
-  value: string;
-  confidence: number;
-  /** Where the value was found on the page, as fractions of the page size. */
-  box: { page: number; x: number; y: number; w: number; h: number } | null;
-};
+/** One processing step; a step can appear twice (started, then finished with a note). */
+export type TimelineStep = { stage: string; label: string; at: string; ok: boolean; note?: string | null };
+
+/** Where an extracted value sits on the original, as fractions of the page: [x0, y0, x1, y1]. */
+export type Highlight = { field: string; page: number; box: [number, number, number, number] };
 
 export type DocumentDetail = DocumentSummary & {
-  mime_type: string;
-  /** Download link for the untouched original. */
-  original_url: string;
-  /** Each page rendered as an image, so values can be highlighted where they were found. */
-  pages: { url: string; width: number; height: number }[];
-  fields: ExtractedField[];
-  confirmation: Confirmation | null;
+  /** The accepted form: plain strings, plus line items. */
+  fields: Record<string, unknown>;
+  timeline: TimelineStep[];
+  review_reasons: string[];
+  warnings: DocumentWarning[];
+  /** Page count, once the text has been read. */
+  pages: number | null;
+  mime: string;
+  sha256: string;
+  sender_domain: string | null;
+  sender_checks: Record<string, string>;
+  /** Exactly what was sent to the AI, with personal details replaced by placeholders. */
+  ai_saw: string | null;
+  highlights: Highlight[];
+  attempts: { attempt: number; role: string; model: string; passed: boolean; problems: string[]; provider: string | null }[];
+  actions: Action[];
+  record_id: string | null;
 };
 
 // Activity
 
-export type ActivityEntry = { id: string; at: string; actor: string; action: string; summary: string; level: ApprovalLevel | null };
-export type Activity = { entries: ActivityEntry[]; chain_ok: boolean };
+export type ActivityEntry = {
+  seq: number;
+  at: string;
+  /** "user:<id>", "ai:<step>", "system", "scheduler" or "webhooks". */
+  actor: string;
+  event: string;
+  subject: string | null;
+  details: Record<string, unknown> | null;
+  /** Start of this entry's fingerprint. */
+  hash: string;
+};
+export type Activity = { items: ActivityEntry[]; total: number };
+export type ActivityCheck = { intact: boolean; entries: number; broken_at: number | null };
 
 // Connections
 
 export type ConnectionKind = "email" | "payments" | "bank" | "accounting";
+export type ConnectionProvider = "mailpit" | "stripe" | "plaid" | "quickbooks";
 export type Connection = {
-  id: string;
   kind: ConnectionKind;
-  name: string;
-  status: "ok" | "attention" | "error" | "not_connected";
-  last_synced_at: string | null;
-  message: string | null;
+  provider: ConnectionProvider;
+  provider_label: string;
+  title: string;
+  what: string;
+  required: boolean;
+  status: "connected" | "disconnected" | "expired" | "error";
+  last_sync_at: string | null;
+  /** Why the last sync failed, written for the person. */
+  error: string | null;
+  counts: Record<string, number> | null;
+  /** The bills inbox address, for the email card. */
+  address: string | null;
 };
+export type ConnectedAccount = { id: string; source: string; name: string; mask: string | null; currency: string; balance_minor: number; as_of: string };
+export type Connections = { items: Connection[]; accounts: ConnectedAccount[] };
+export type SyncResult = { ok: true; counts: Record<string, number>; matched: Record<string, number> };
 
 // Ask
 
@@ -244,9 +298,8 @@ export type AskReply = {
   confirmation: Confirmation | null;
 };
 
-// Receipts and phone handoff
+// Phone handoff
 
-export type Receipt = { id: string; filename: string; submitted_at: string; status: DocumentStatus; total_minor: number | null; merchant: string | null };
 export type Handoff = { url: string; expires_at: string };
 
 // Notifications and search

@@ -1,11 +1,14 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiOptional } from "./client";
 import type {
+  Action,
   Activity,
+  ActivityCheck,
   AskReply,
   BusinessHealth,
   CashFlow,
-  Connection,
+  ConnectionProvider,
+  Connections,
   DocumentDetail,
   DocumentSummary,
   Financing,
@@ -13,10 +16,11 @@ import type {
   Handoff,
   HomeSummary,
   Inbox,
+  InboxTab,
   Notification,
-  Receipt,
   Recommendation,
   SearchResult,
+  SyncResult,
   TeamMember,
 } from "./types";
 
@@ -34,15 +38,16 @@ function useScreen<T>(key: readonly unknown[], path: string, enabled = true) {
 }
 
 export const useHome = () => useScreen<HomeSummary>(["home"], "/api/home");
-export const useInbox = (enabled = true) => useScreen<Inbox>(["inbox"], "/api/inbox", enabled);
+/** Each tab is its own request; every answer also carries the counts for the tab badges. */
+export const useInbox = (tab: InboxTab, enabled = true) => useScreen<Inbox>(["inbox", tab], `/api/inbox?tab=${tab}&limit=100`, enabled);
 export const useCashFlow = () => useScreen<CashFlow>(["cash-flow"], "/api/cash-flow");
 export const useBusinessHealth = () => useScreen<BusinessHealth>(["business-health"], "/api/business-health");
 export const useRecommendations = () => useScreen<{ items: Recommendation[] }>(["recommendations"], "/api/recommendations");
 export const useFinancing = () => useScreen<Financing>(["financing"], "/api/financing");
-export const useDocuments = () => useScreen<{ items: DocumentSummary[] }>(["documents"], "/api/documents");
-export const useActivity = () => useScreen<Activity>(["activity"], "/api/activity");
-export const useConnections = () => useScreen<{ items: Connection[] }>(["connections"], "/api/connections");
-export const useMyReceipts = () => useScreen<{ items: Receipt[] }>(["receipts", "mine"], "/api/receipts/mine");
+/** Employees get only the documents they sent in; the server filters. */
+export const useDocuments = () => useScreen<{ items: DocumentSummary[] }>(["documents", "list"], "/api/documents?limit=200");
+export const useActivityCheck = () => useScreen<ActivityCheck>(["activity", "verify"], "/api/activity/verify");
+export const useConnections = () => useScreen<Connections>(["connections"], "/api/connections");
 export const useNotifications = (enabled: boolean) => useScreen<{ items: Notification[] }>(["notifications"], "/api/notifications", enabled);
 export const useTeam = (enabled: boolean) => useScreen<{ items: TeamMember[] }>(["team"], "/api/team", enabled);
 
@@ -51,6 +56,24 @@ export function useDocument(id: string | null) {
     queryKey: ["documents", id],
     queryFn: ({ signal }) => apiOptional<DocumentDetail>(`/api/documents/${encodeURIComponent(id ?? "")}`, { signal }),
     enabled: Boolean(id),
+  });
+}
+
+const ACTIVITY_PAGE = 100;
+
+/** Newest first, a page at a time. `actor` is a prefix such as "user:" or "ai:". */
+export function useActivity(filter: { actor?: string; event?: string }) {
+  return useInfiniteQuery({
+    queryKey: ["activity", "list", filter],
+    queryFn: ({ pageParam, signal }) => {
+      const q = new URLSearchParams({ limit: String(ACTIVITY_PAGE), offset: String(pageParam) });
+      if (filter.actor) q.set("actor", filter.actor);
+      if (filter.event) q.set("event", filter.event);
+      return api<Activity>(`/api/activity?${q}`, { signal });
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => (last.items.length < ACTIVITY_PAGE ? undefined : pages.length * ACTIVITY_PAGE),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -94,22 +117,21 @@ function useInvalidate() {
   return (...keys: string[]) => Promise.all(keys.map((k) => qc.invalidateQueries({ queryKey: [k] })));
 }
 
-export function useApproveAction() {
+const actionPath = (id: string, verb: string) => `/api/actions/${encodeURIComponent(id)}/${verb}`;
+
+function useActionMutation(verb: "approve" | "reject" | "cancel" | "undo") {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (actionId: string) =>
-      api<{ status: "done" | "waiting_for_second_approval"; message: string }>(`/api/actions/${encodeURIComponent(actionId)}/approve`, { method: "POST" }),
-    onSuccess: () => invalidate("inbox", "home", "activity", "recommendations", "documents"),
+    mutationFn: (actionId: string) => api<Action>(actionPath(actionId, verb), { method: "POST" }),
+    onSettled: () => invalidate("inbox", "home", "activity", "recommendations", "documents"),
   });
 }
 
-export function useCancelAction() {
-  const invalidate = useInvalidate();
-  return useMutation({
-    mutationFn: (actionId: string) => api<{ ok: true }>(`/api/actions/${encodeURIComponent(actionId)}/cancel`, { method: "POST" }),
-    onSuccess: () => invalidate("inbox", "home", "activity"),
-  });
-}
+/** Answers with the action: "executed" when done, still "pending" when a second person must approve. */
+export const useApproveAction = () => useActionMutation("approve");
+export const useRejectAction = () => useActionMutation("reject");
+export const useCancelAction = () => useActionMutation("cancel");
+export const useUndoAction = () => useActionMutation("undo");
 
 export function useDismissRecommendation() {
   const invalidate = useInvalidate();
@@ -128,24 +150,31 @@ export function useAsk() {
 export function useUploadDocument() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: ({ file, source = "upload" }: { file: File; source?: "upload" | "photo" }) => {
       const form = new FormData();
       form.append("file", file);
-      return api<DocumentSummary>("/api/documents", { method: "POST", body: form });
+      form.append("source", source);
+      return api<{ id: string }>("/api/documents", { method: "POST", body: form });
     },
     onSuccess: () => invalidate("documents", "inbox"),
   });
 }
 
-export function useSubmitReceipt() {
+/** A person corrects what was read. A document waiting for review then goes for approval. */
+export function useCorrectFields(documentId: string) {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData();
-      form.append("file", file);
-      return api<Receipt>("/api/receipts", { method: "POST", body: form });
-    },
-    onSuccess: () => invalidate("receipts"),
+    mutationFn: (fields: Record<string, string>) =>
+      api<DocumentDetail>(`/api/documents/${encodeURIComponent(documentId)}/fields`, { method: "POST", body: { fields } }),
+    onSuccess: () => invalidate("documents", "inbox", "activity"),
+  });
+}
+
+export function useReprocessDocument(documentId: string) {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: () => api<{ ok: true }>(`/api/documents/${encodeURIComponent(documentId)}/reprocess`, { method: "POST" }),
+    onSuccess: () => invalidate("documents", "inbox"),
   });
 }
 
@@ -153,11 +182,32 @@ export function useCreateHandoff() {
   return useMutation({ mutationFn: () => api<Handoff>("/api/handoff", { method: "POST" }) });
 }
 
-export function useReconnect() {
+// Connections. Connecting reads everything once, so these can take a few seconds.
+
+const connectionPath = (provider: ConnectionProvider, verb: string) => `/api/connections/${provider}/${verb}`;
+
+/** Stripe and the Plaid sandbox connect with one call. QuickBooks goes through Intuit's sign-in page instead. */
+export function useConnect() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (id: string) => api<{ redirect_url: string | null }>(`/api/connections/${encodeURIComponent(id)}/reconnect`, { method: "POST" }),
-    onSuccess: () => invalidate("connections"),
+    mutationFn: (provider: "stripe" | "plaid") => api<SyncResult>(connectionPath(provider, "connect"), { method: "POST" }),
+    onSettled: () => invalidate("connections", "activity"),
+  });
+}
+
+export function useSync() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (provider: ConnectionProvider) => api<SyncResult>(connectionPath(provider, "sync"), { method: "POST" }),
+    onSettled: () => invalidate("connections", "activity", "documents", "inbox"),
+  });
+}
+
+export function useDisconnect() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (provider: ConnectionProvider) => api<{ ok: true }>(connectionPath(provider, "disconnect"), { method: "POST" }),
+    onSettled: () => invalidate("connections", "activity"),
   });
 }
 
@@ -172,7 +222,7 @@ export function useMarkNotificationsRead() {
 export function useSetAiPaused() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (paused: boolean) => api<{ ai_paused: boolean }>("/api/business/ai-pause", { method: "POST", body: { paused } }),
+    mutationFn: (paused: boolean) => api<{ ai_paused: boolean }>("/api/settings/ai-pause", { method: "POST", body: { paused } }),
     onSuccess: () => invalidate("me"),
   });
 }

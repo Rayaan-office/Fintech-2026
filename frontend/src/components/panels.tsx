@@ -103,7 +103,7 @@ export function FocusedPanel({ open, onOpenChange, title, description, actions, 
                 )}
               >
                 <PanelHeader title={title} description={description} actions={actions} />
-                <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+                <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">{children}</div>
               </motion.div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

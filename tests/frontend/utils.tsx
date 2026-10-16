@@ -24,17 +24,17 @@ export function renderApp(path: string) {
   return { ...utils, router };
 }
 
-type Handler = (init: RequestInit | undefined) => { status: number; body?: unknown };
+type Handler = (init: RequestInit | undefined, url: URL) => { status: number; body?: unknown };
 
 /** A fetch stub keyed by "METHOD /path"; anything unknown answers 404 like a missing endpoint. */
 export function mockApi(handlers: Record<string, Handler>) {
-  const calls: { method: string; path: string; init: RequestInit | undefined }[] = [];
+  const calls: { method: string; path: string; url: URL; init: RequestInit | undefined }[] = [];
   const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost:5173");
     const method = (init?.method ?? "GET").toUpperCase();
-    calls.push({ method, path: url.pathname, init });
+    calls.push({ method, path: url.pathname, url, init });
     const handler = handlers[`${method} ${url.pathname}`];
-    const { status, body } = handler ? handler(init) : { status: 404, body: { detail: "Not Found" } };
+    const { status, body } = handler ? handler(init, url) : { status: 404, body: { detail: "Not Found" } };
     return new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   };
   return { fetchMock, calls };

@@ -4,6 +4,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Outlet } from "react-router";
 import { useCan, useCurrentUser } from "@/api/auth";
 import { useInbox } from "@/api/hooks";
+import { useLiveUpdates } from "@/api/live";
 import { MobileNav } from "./MobileNav";
 import { SearchCommand } from "./SearchCommand";
 import { ShortcutsDialog } from "./ShortcutsDialog";
@@ -15,7 +16,8 @@ export function AppShell() {
   const can = useCan();
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const inbox = useInbox(can("view_all"));
+  const inbox = useInbox("needs_approval", can("view_all"));
+  useLiveUpdates();
   const counts = inbox.data?.counts;
   const inboxCount = counts ? counts.to_review + counts.needs_approval : undefined;
 
