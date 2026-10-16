@@ -11,7 +11,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 0 | Foundation and document pipeline | Done |
 | 1 | Frontend: see stages F1–F6 below | F1–F2 done; F3–F6 drafted |
 | 2 | Email inbox connector (Mailpit) | Done |
-| 3 | Payment platform connector (Stripe) | Code drafted, partly tested |
+| 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Code drafted, partly tested |
 | 5 | Accounting connector (QuickBooks) | Code drafted, not tested |
 | 6 | Ledger, matching, forecast and analysis | Matching drafted |
@@ -50,12 +50,17 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - Live test with the real AI: the Acme bill passed first time; the fraud email was caught (changed bank details, look-alike sender) and the bookkeeper could not approve the bank change or the bill.
 - Tests: 66 new (30 unit, 16 integration through the real Mailpit, 20 regression); 139 backend tests pass in all. Bugs fixed in the drafted code: text-only emails were refused as raw email, a Bcc to the inbox was dropped (and an email to two businesses reached only one), a malformed notification caused a server error, and any sender could forge the sender-check verdict.
 
-## Stage 3: Payment platform connector (Stripe)
+## Stage 3: Payment platform connector (Stripe) (done)
 
-- Sync customers, invoices, card payments with fees, payouts and balance; signature-checked notifications via `stripe listen --api-key` (sandbox key, never `stripe login`).
-- Decide what to do with the existing USD test data in the sandbox (3 customers, 113 payments) and the AED balance: the account is UAE-based, so a UK Stripe account would give GBP throughout.
-- Seed GBP customers and invoices from the story.
-- Tests: sync mapping, signature checks, replayed events, live contract test.
+- Decided: a new UK Stripe sandbox, so payments, fees, balance and payouts are all in GBP like the bank feed. The old UAE sandbox (AED balance, USD test data) is left as it is.
+- Sync (`connectors/stripe_conn.py`): customers (joined to customers we already know by name, linked by Stripe ID after that; email kept in the personal-detail store), invoices with VAT and lines, which card payment paid which invoice (Stripe's invoice payments), card payments with their Stripe fee as a separate record, refunds, disputes with the dispute fee, payouts and the balance. Written-off invoices and failed payouts are not counted as money on its way.
+- Safety: only a read-only sandbox key (`rk_test_`) is used; the API version is pinned (2026-09-30); every object is checked against a fixed format and bad ones are skipped and counted; live-mode data is refused.
+- Notifications: signature checked (and no older than five minutes), each handled once, unrelated ones ignored, nothing taken from the notification itself. A burst of notifications leads to at most two reads. Forwarded in development by `uv run python -m app.demo.stripe_listen` (Stripe CLI with the sandbox key, no `stripe login`); `--save-secret` writes the notification secret into `.env` without showing it.
+- Demo data (`uv run python -m app.demo.payments`): the story's five customers, a week of card sales (counter and online, the size of one weekly payout), a declined card, a refund, a card dispute, a paid special-order invoice and an open catering deposit invoice, all with 20% VAT. Stripe can't backdate, so the six months before are in the bank feed as weekly payouts. Refuses a sandbox outside the UK; tagged, so running it twice adds nothing.
+- Failed syncs now show on the connection card (for every connector), with a clear reason (key rejected, missing permission, account linked to another business).
+- Tests so far: 37 new (8 unit, 22 integration against a fake Stripe, 7 regression) plus 10 live contract tests; 176 backend tests pass. Bugs fixed in the drafted code: every genuine notification was refused (stripe-python 16 events aren't dicts), card payments were never linked to their invoice and VAT was lost (fields Stripe removed), failed payouts and written-off invoices counted as expected money, failed syncs left no error, and every notification started a full re-read.
+- Live check with the new UK sandbox: the demo data went in (33 card payments worth £1,088.10 including the paid invoice and the disputed order, 1 declined, 1 refund, 1 dispute, 2 invoices), and running it again added nothing. All 10 live contract tests pass, including that our key can't change anything in Stripe. In the running app, Stripe connected (5 customers, 2 invoices, 33 payments with fees, refund, dispute, GBP balance); a new card sale arrived through `stripe listen` within a second and was read back from Stripe; the same notification resent was ignored.
+- Demo-data fixes found in the live run: a card has to be attached to the customer before paying their invoice, and this API version no longer accepts `payment_method_types`.
 
 ## Stage 4: Bank connector (Plaid)
 

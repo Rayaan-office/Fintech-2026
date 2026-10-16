@@ -15,7 +15,7 @@ Our app connects to **types** of tools, not to one brand. Each type has a connec
 | Type | Needed? | What it tells us | Examples | In our demo |
 |---|---|---|---|---|
 | Email inbox | Required | Bills, receipts, payment notices | Gmail, Outlook, any IMAP mailbox | Mailpit test inbox |
-| Payment platform | Optional | Money customers paid | Stripe, PayPal, Square | Stripe test mode |
+| Payment platform | Optional | Money customers paid | Stripe, PayPal, Square | Stripe sandbox (UK, GBP) |
 | Bank account | Optional | Money in and out of the bank | A live bank connection such as Plaid, or a statement file (CSV/OFX) | Plaid test bank; statement upload also supported |
 | Accounting software | Optional | The official books | QuickBooks, Xero | QuickBooks test company |
 | Upload or photo | Always available | Any PDF, image or spreadsheet; a photo taken in the app | — | Built in |

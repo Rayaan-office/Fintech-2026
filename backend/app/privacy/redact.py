@@ -96,6 +96,19 @@ def store_in_vault(business_id, redacted: Redacted) -> dict[str, str]:
     return mapping
 
 
+def store_value(business_id, kind: str, value: str) -> str:
+    """Encrypt one real value from a connected tool (e.g. a customer's email) into the vault. Returns its id."""
+    vid = uuid.uuid4()
+    with vault_session(business_id) as db:
+        db.execute(
+            sql("INSERT INTO vault.pii_values (id, business_id, kind, ciphertext, fingerprint) "
+                "VALUES (:id, :b, :k, :c, :f)"),
+            {"id": vid, "b": str(business_id), "k": kind, "c": vault.seal_str(value),
+             "f": fingerprint(_norm(kind, value), kind)},
+        )
+    return str(vid)
+
+
 def vault_values(business_id, vault_ids: list[str]) -> dict[str, str]:
     """Read real values back. Only server code that needs them (restoring a form, sending an
     approved email) calls this; it is never exposed to the AI."""
