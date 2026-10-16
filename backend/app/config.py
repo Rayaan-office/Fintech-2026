@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     plaid_env: str = "sandbox"
     plaid_products: str = "transactions"
     plaid_country_codes: str = "GB"
+    # How often the background poller reads each connected bank (Plaid can't notify us without a public address)
+    bank_poll_minutes: int = 15
+    scheduler_enabled: bool = True
 
     # Accounting software
     qbo_client_id: str

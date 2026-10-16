@@ -12,7 +12,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 1 | Frontend: see stages F1–F6 below | F1–F2 done; F3–F6 drafted |
 | 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Done |
-| 4 | Bank connector (Plaid) | Code drafted, partly tested |
+| 4 | Bank connector (Plaid) | Done |
 | 5 | Accounting connector (QuickBooks) | Code drafted, not tested |
 | 6 | Ledger, matching, forecast and analysis | Matching drafted |
 | 7 | Approvals, recommendations, financing and assistant | Approval engine done |
@@ -62,11 +62,15 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - Live check with the new UK sandbox: the demo data went in (33 card payments worth £1,088.10 including the paid invoice and the disputed order, 1 declined, 1 refund, 1 dispute, 2 invoices), and running it again added nothing. All 10 live contract tests pass, including that our key can't change anything in Stripe. In the running app, Stripe connected (5 customers, 2 invoices, 33 payments with fees, refund, dispute, GBP balance); a new card sale arrived through `stripe listen` within a second and was read back from Stripe; the same notification resent was ignored.
 - Demo-data fixes found in the live run: a card has to be attached to the customer before paying their invoice, and this API version no longer accepts `payment_method_types`.
 
-## Stage 4: Bank connector (Plaid)
+## Stage 4: Bank connector (Plaid) (done)
 
-- Custom sandbox user generated from the story (266 transactions, GBP), cursor-based sync, expired-connection handling.
-- Background schedule for polling.
-- Tests: sync mapping, removed transactions, reconnect message, live contract test.
+- The demo bank account is a Plaid custom test user generated from the story: one GBP current account, 266 transactions over six months, today's balance £20,247.79. It sits at Royal Bank of Plaid, Plaid's UK test bank; the bank we used before has an OAuth screen, which custom test users don't support.
+- Sync (`connectors/plaid_conn.py`): Transactions only (the least data), read from where we stopped last time. Amounts are converted to pence exactly; every account and transaction is checked against a fixed format and bad ones are skipped and counted; only current and savings accounts are kept. Changed transactions are updated, removed ones voided, and a pending payment that posts keeps its record.
+- If the bank changes data while we page through it, the read starts again from the beginning, throwing away the half-read pages. One read per business at a time, across processes.
+- Background schedule (`app/scheduler.py`, inside the API): we have no public address, so Plaid can't notify us. Each connected bank is read every 15 minutes, and every minute while Plaid is still sending the history (it sends the last 30 days at once and the rest seconds later). Expired banks wait for the person; quiet reads don't fill the activity log.
+- Expired connections: the card says "The bank connection has expired. Reconnect." Reconnecting makes a new link with new ids; our records carry over to it (keeping their matches), and old ones the bank no longer has are voided once the full history is in. The old link is removed at Plaid.
+- Tests: 25 new (4 unit, 17 integration against a fake Plaid, 4 regression) plus 4 live contract tests; 201 backend tests pass. Bugs fixed in the drafted code: only the last 30 days ever arrived, reconnecting doubled every bank transaction, a change at the bank during paging failed the sync, and a pending payment lost its record when it posted.
+- Live check: all 266 transactions and the balance arrive from the real sandbox in our shapes, and an expired login is reported as expired. The demo business's existing bank connection was reconnected through the new code: all 266 records carried over, none duplicated or voided. The schedule, running in the API, then read the bank on its own.
 
 ## Stage 5: Accounting connector (QuickBooks)
 

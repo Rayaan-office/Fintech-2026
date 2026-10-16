@@ -83,7 +83,7 @@ Our roles are the essential jobs found in small-business finance, based on the u
 |---|---|---|
 | Email inbox | A dedicated bills inbox, never the owner's personal mailbox | Each email is processed once (tracked by its unique message ID). We check the sender's signature ourselves and trust only our own mail server's SPF, DKIM and DMARC verdict. Spoofed senders, automatic replies and mail loops are refused, and the owner is told. |
 | Payment platform | A read-only key. Our demo accepts only a sandbox key and refuses live-mode data. | Notifications must carry a valid signature less than five minutes old, and each is handled once. A notification only tells us to look: we read the latest from the platform ourselves and check every record against a fixed format. |
-| Bank account | Read-only transaction access through Plaid, or a statement file | Plaid access tokens are encrypted and never leave the server |
+| Bank account | Read-only transaction access through Plaid (Transactions only, the least data), or a statement file | Plaid access tokens are encrypted and never leave the server |
 | Accounting software | Accounting data only; writes only after approval | Notifications must carry a valid signature |
 
 Unsigned or wrongly signed notifications are rejected.

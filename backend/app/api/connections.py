@@ -25,7 +25,7 @@ CARDS = [
     ("bank", "plaid", "Bank account", "Money in and out of the bank", False),
     ("accounting", "quickbooks", "Accounting software", "The official books", False),
 ]
-PROVIDER_LABEL = {"mailpit": "Mailpit test inbox", "stripe": "Stripe sandbox (UK)", "plaid": "Plaid test bank",
+PROVIDER_LABEL = {"mailpit": "Mailpit test inbox", "stripe": "Stripe sandbox (UK)", "plaid": "Plaid sandbox (UK)",
                   "quickbooks": "QuickBooks test company"}
 
 
@@ -55,9 +55,7 @@ def _failure(provider: str, exc: Exception) -> tuple[int, str, bool]:
     if isinstance(exc, quickbooks.NeedsReconnect):
         return 409, "The QuickBooks connection has expired. Reconnect.", True
     if isinstance(exc, plaid_conn.PlaidError):
-        if exc.code == "ITEM_LOGIN_REQUIRED":
-            return 502, "The bank connection has expired. Reconnect.", True
-        return 502, "The bank didn't respond. Try again in a minute.", False
+        return (409 if exc.expired or exc.code == "NOT_CONNECTED" else 502), exc.for_person(), exc.expired
     if isinstance(exc, stripe_conn.StripeError):
         if exc.status == 401:
             return 502, "Stripe rejected our key. Check the payment platform key in the settings.", True
@@ -70,6 +68,11 @@ def _failure(provider: str, exc: Exception) -> tuple[int, str, bool]:
     return 502, f"We couldn't reach {PROVIDER_LABEL[provider]}. Try again in a minute.", False
 
 
+def _never_connected(exc: Exception) -> bool:
+    """Nothing to remember on the card: it already says "not connected"."""
+    return isinstance(exc, plaid_conn.PlaidError) and exc.code == "NOT_CONNECTED"
+
+
 def _run(p: Principal, provider: str, fn, *args):
     limiter.check(f"sync:{p.business_id}:{provider}", 6, 60)
     try:
@@ -77,7 +80,8 @@ def _run(p: Principal, provider: str, fn, *args):
             counts = fn(db, p.business_id, *args)
     except Exception as exc:
         status, message, expired = _failure(provider, exc)
-        save_failure(p.business_id, provider, message, expired)
+        if not _never_connected(exc):
+            save_failure(p.business_id, provider, message, expired)
         raise HTTPException(status, message)
     # Commit sync results first, then match in a new transaction
     with tenant_session(p.business_id) as db:
