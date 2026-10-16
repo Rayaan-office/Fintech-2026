@@ -14,7 +14,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Done |
 | 5 | Accounting connector (QuickBooks) | Done |
-| 6 | Ledger, matching, forecast and analysis | Matching drafted |
+| 6 | Ledger, matching, forecast and analysis | Done |
 | 7 | Approvals, recommendations, financing and assistant | Approval engine done |
 | 8 | Frontend: see stages F3–F6 below | Not started |
 | 9 | Hardening and submission material | Not started |
@@ -85,13 +85,58 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - Tests: 39 new (29 integration against a fake QuickBooks, 10 regression); 240 backend tests pass. Bugs fixed in the drafted code: a failed read could lose the refreshed sign-in for good, changes made during the first read were never picked up, deleted bills stayed open, voided invoices counted as paid, a month without reading broke every read, a second company overwrote the first one's records, retrying an approved bill added it twice, a bill we added came back as a second bill, and the sign-in link could be finished in another browser.
 - Live check with the UK sandbox: connected through Intuit's sign-in, then filled with the demo books. Every invoice and bill total matched the story to the penny, and the next read took in the 307 new items through the change feed. The emailed Acme bill AS-1005 was added through the approval handler: the right supplier, 20.0% S VAT, £658.56 exactly, the PDF attached, and the next read did not count it twice. The schedule, running in the API, then read QuickBooks on its own.
 
-## Stage 6: Ledger, matching, forecast and analysis
+## Stage 6: Ledger, matching, forecast and analysis (done)
 
-- Cash position across accounts in the business currency.
-- Matching rules and scoring on real synced data, combinations, accept / reject flows.
-- 90-day forecast with best and worst case, repeating items, everyday pattern.
-- Early warnings, business health, why cash changed, what-if.
-- Tests: each calculation against the story's known answers.
+- Cash position (`analytics/ledger.py`): every connected bank account and payment-platform balance, in the business currency. Accounts and items in other currencies are left out and listed, since we hold no exchange rates. Each bank line is labelled as one of: the same money as an invoice, bill or payout we already have; card sales; tax; financing; salaries; rent; or everyday spending. That way nothing is counted twice.
+- Matching on real synced data (`analytics/matching.py`):
+  - We never suggest a payment that names a different invoice of ours, or a different customer or supplier.
+  - We never pair two items from the same accounting or payment system, since QuickBooks and Stripe already record what each payment settled.
+  - A bank payment that is the same money as an invoice or bill already paid in the books is linked without changing either. It is found by its number, or for direct debits and card payments by party, amount and date.
+  - Suggestions that no longer fit are withdrawn, and their approvals cancelled.
+  - A turned-down pair is never suggested again.
+  - QuickBooks invoices and bills now get the date they were paid.
+- 90-day forecast (`analytics/forecast.py`), day by day:
+  - unpaid invoices, placed by each customer's own payment habits;
+  - bills on their due dates; overdue ones are assumed paid now;
+  - repeating bank items such as rent, payroll, the van loan and card-sales payouts;
+  - regular customers and suppliers, spotted from how often they are invoiced or billed;
+  - VAT, estimated from the quarter's invoices, bills and card sales;
+  - the everyday pattern by day of the week;
+  - planned costs.
+
+  Best and worst case come from customers' past payment spread and everyday variation. Money already sitting in the payment platform isn't counted again with the next payout.
+- Early warnings: the first day cash goes below the safety level (by default two weeks of usual spending, or one the owner sets), naming the biggest payments that cause it. Graded watch, warning or urgent.
+- What-if: planned costs, bills left out or moved. The forecast is recalculated on a copy, and the result shows the new lowest point and how much is missing below the safety level. Planned costs can be kept (finance managers and owners); real records never change.
+- Business health (`analytics/health.py`):
+  - profit and loss by month, before VAT; months our records only partly cover are marked;
+  - spending by category and top suppliers;
+  - who owes you, by how overdue;
+  - days to get paid and cash runway;
+  - the four health checks in plain words.
+- Why cash changed: this month so far against the same days last month (or 30 days against the 30 before), split into ranked reasons with the payers and payees behind each. The reasons add up exactly to the change. The words are a plain template for now; Stage 7 has the AI write them, fact-checked.
+- API (`api/insights.py`), read-only for bookkeepers and up:
+  - `/api/cash`, `/api/cash-flow`, `/api/cash-flow/what-if` and `/api/cash-flow/why`;
+  - `/api/business-health` and `/api/home`;
+  - `/api/matches` (accepting and rejecting still go through the approvals inbox);
+  - `/api/planned-items` and `/api/settings/safety-level` (owner only).
+- Live check on the connected sandboxes:
+  - after a restart, the schedule withdrew the 15 wrong suggestions and cancelled their approvals;
+  - it linked 146 bank payments to invoices and bills already paid in QuickBooks, and gave 156 QuickBooks items their paid dates;
+  - every bank line is now explained except bank-only ones (payouts, payroll, rent, the van loan, everyday spending).
+
+  The forecast's first warning: "VAT (estimated) on 7 November will take you below your safety level in 22 days."
+
+  Intuit's sample data in the sandbox company is in the figures too: it adds old overdue bills, about £26k of June sales, and VAT on its invoices.
+- Tests: 41 new, 281 backend tests pass.
+  - 28 integration tests run on the whole demo story loaded as books and a bank feed. Each figure is checked against an answer worked out from the story itself: profit and loss to the penny every month, the VAT estimate, rent on the 1st, payroll on the 28th, and every paid item's bank payment linked with nothing wrongly suggested.
+  - 13 regression tests.
+- Bugs fixed:
+  - In the drafted matching code:
+    - all 15 suggestions on the real data were wrong: payments naming another invoice, payments from another customer, and payments QuickBooks had already applied;
+    - turning down a suggestion reopened a paid invoice;
+    - turned-down pairs came back;
+    - stale suggestions stayed waiting.
+  - Found while building: the ledger could read another business's settings, and a what-if could be a penny out.
 
 ## Stage 7: Approvals, recommendations, financing and assistant
 

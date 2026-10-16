@@ -1,6 +1,6 @@
 """What each approved action actually does. Registered with actions.handler()."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -172,7 +172,13 @@ for _type in EMAIL_TO:
 
 
 def run_matching(db: Session, business_id, actor: str = "ai:matching") -> dict:
-    """Find matches; confident small ones are accepted automatically, the rest wait for a person."""
+    """Find matches; confident small ones are accepted automatically, the rest wait for a person.
+    Suggestions that no longer hold (the item was paid elsewhere, the payment was voided) are withdrawn."""
+    withdrawn = _withdraw_stale(db, business_id)
+    linked = 0
+    for c in matching.already_settled(db):  # same money seen twice; nothing changes, so no approval
+        matching.apply(db, c, "accepted", actor)
+        linked += 1
     found = matching.find_candidates(db)
     auto = suggested = 0
     for c in found:
@@ -190,9 +196,29 @@ def run_matching(db: Session, business_id, actor: str = "ai:matching") -> dict:
             auto += 1
         else:
             suggested += 1
-    if found:
-        events.publish(business_id, "matches", {"auto": auto, "suggested": suggested})
-    return {"auto": auto, "suggested": suggested}
+    if found or withdrawn:
+        events.publish(business_id, "matches", {"auto": auto, "suggested": suggested, "withdrawn": withdrawn})
+    if linked or withdrawn:
+        audit.record(db, business_id, actor, "matches_tidied", details={"linked": linked, "withdrawn": withdrawn})
+    return {"auto": auto, "suggested": suggested, "linked": linked, "withdrawn": withdrawn}
+
+
+def _withdraw_stale(db: Session, business_id) -> int:
+    n = 0
+    for m in db.execute(select(Match).where(Match.status == "suggested")).scalars().all():
+        if matching.still_suggested(db, m):
+            continue
+        m.status = "withdrawn"
+        for a in db.execute(select(Action).where(Action.type == "accept_match", Action.status == "pending",
+                                                 Action.payload["match_id"].astext == str(m.id))).scalars():
+            a.status = "cancelled"
+            a.decided_at = datetime.now(UTC)
+            a.result = {"reason": "This suggestion no longer fits the records."}
+            audit.record(db, business_id, "ai:matching", "action_cancelled", subject=f"action:{a.id}",
+                         details={"type": a.type, "reason": "stale_match"})
+            events.publish(business_id, "action", {"id": str(a.id), "status": "cancelled", "type": a.type})
+        n += 1
+    return n
 
 
 def _match_summary(db: Session, c: matching.Candidate) -> str:
@@ -207,6 +233,10 @@ def _match_summary(db: Session, c: matching.Candidate) -> str:
 
 def _accept_match(db: Session, action: Action, actor: str) -> dict:
     m = db.get(Match, UUID(action.payload["match_id"]))
+    target = db.get(Record, m.left_id)
+    if m.status == "suggested" and (target.status in ("paid", "void") or not matching.still_suggested(db, m)):
+        raise actions.HTTPException(409, "This match no longer fits the records: the item was paid or changed "
+                                         "since it was suggested.")
     if m.status != "accepted":
         m.status = "accepted"
         m.decided_by = actor
