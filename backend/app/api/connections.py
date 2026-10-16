@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..connectors import mailpit, plaid_conn, quickbooks, stripe_conn
-from ..connectors.common import get_connection
+from ..connectors.common import get_connection, save_failure
 from ..db import tenant_session
 from ..handlers import run_matching
 from ..models import Account, Connection
@@ -25,7 +25,7 @@ CARDS = [
     ("bank", "plaid", "Bank account", "Money in and out of the bank", False),
     ("accounting", "quickbooks", "Accounting software", "The official books", False),
 ]
-PROVIDER_LABEL = {"mailpit": "Mailpit test inbox", "stripe": "Stripe test mode", "plaid": "Plaid test bank",
+PROVIDER_LABEL = {"mailpit": "Mailpit test inbox", "stripe": "Stripe sandbox (UK)", "plaid": "Plaid test bank",
                   "quickbooks": "QuickBooks test company"}
 
 
@@ -50,18 +50,35 @@ def list_connections(p: Principal = Depends(require(Perm.VIEW_ALL)), db: Session
     }
 
 
+def _failure(provider: str, exc: Exception) -> tuple[int, str, bool]:
+    """(HTTP status, message for the person, connection has expired)."""
+    if isinstance(exc, quickbooks.NeedsReconnect):
+        return 409, "The QuickBooks connection has expired. Reconnect.", True
+    if isinstance(exc, plaid_conn.PlaidError):
+        if exc.code == "ITEM_LOGIN_REQUIRED":
+            return 502, "The bank connection has expired. Reconnect.", True
+        return 502, "The bank didn't respond. Try again in a minute.", False
+    if isinstance(exc, stripe_conn.StripeError):
+        if exc.status == 401:
+            return 502, "Stripe rejected our key. Check the payment platform key in the settings.", True
+        if exc.status == 403:
+            return 502, "Our Stripe key isn't allowed to read everything we need. Check its read permissions.", False
+        if exc.status == 0:
+            return 409, exc.message, False
+    if isinstance(exc, PermissionError):
+        return 409, "This account is already connected to another business.", False
+    return 502, f"We couldn't reach {PROVIDER_LABEL[provider]}. Try again in a minute.", False
+
+
 def _run(p: Principal, provider: str, fn, *args):
     limiter.check(f"sync:{p.business_id}:{provider}", 6, 60)
-    with tenant_session(p.business_id) as db:
-        try:
+    try:
+        with tenant_session(p.business_id) as db:
             counts = fn(db, p.business_id, *args)
-        except quickbooks.NeedsReconnect:
-            raise HTTPException(409, "The QuickBooks connection has expired. Reconnect.")
-        except plaid_conn.PlaidError as e:
-            raise HTTPException(502, "The bank connection has expired. Reconnect." if e.code == "ITEM_LOGIN_REQUIRED"
-                                else "The bank didn't respond. Try again in a minute.")
-        except Exception:
-            raise HTTPException(502, f"We couldn't reach {PROVIDER_LABEL[provider]}. Try again in a minute.")
+    except Exception as exc:
+        status, message, expired = _failure(provider, exc)
+        save_failure(p.business_id, provider, message, expired)
+        raise HTTPException(status, message)
     # Commit sync results first, then match in a new transaction
     with tenant_session(p.business_id) as db:
         matched = run_matching(db, p.business_id)

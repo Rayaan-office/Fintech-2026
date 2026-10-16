@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ..connectors import mailpit, quickbooks, stripe_conn
-from ..connectors.common import lookup_route, seen_before
+from ..connectors.common import get_connection, lookup_route, run_once_at_a_time, save_failure, seen_before
 from ..db import global_session, tenant_session
 from ..handlers import run_matching
 from ..security import audit
@@ -27,13 +27,19 @@ async def _body(request: Request) -> bytes:
 
 def _resync(provider: str, business_id) -> None:
     fn = {"stripe": stripe_conn.sync, "quickbooks": quickbooks.sync}[provider]
-    try:
-        with tenant_session(business_id) as db:
-            fn(db, business_id)
+
+    def once():
+        try:
+            with tenant_session(business_id) as db:
+                fn(db, business_id)
+        except Exception as exc:
+            log.warning("%s resync after notification failed: %s", provider, type(exc).__name__)
+            save_failure(business_id, provider, f"Updating after a notification failed ({type(exc).__name__}).")
+            return
         with tenant_session(business_id) as db:
             run_matching(db, business_id)
-    except Exception as exc:
-        log.warning("%s resync after notification failed: %s", provider, type(exc).__name__)
+
+    run_once_at_a_time(f"{provider}:{business_id}", once)
 
 
 @router.post("/stripe")
@@ -49,8 +55,13 @@ async def stripe_webhook(request: Request, tasks: BackgroundTasks):
     if not bid:
         return {"ignored": True}
     with tenant_session(bid) as db:
+        c = get_connection(db, bid, "stripe", create=False)
+        if not c or c.status == "disconnected":
+            return {"ignored": True}
         if seen_before(db, bid, "stripe", event["id"]):
             return {"duplicate": True}
+        if not stripe_conn.relevant(event["type"]):
+            return {"ignored": True}
         audit.record(db, bid, "stripe", "notification_received", details={"type": event["type"], "id": event["id"]})
     # Re-read from Stripe rather than trusting the notification's contents
     tasks.add_task(_resync, "stripe", bid)

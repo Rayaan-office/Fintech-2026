@@ -1,12 +1,15 @@
 """Helpers shared by the connectors: connection rows, encrypted tokens, upserting ledger records."""
 
 import json
+import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import events
+from ..db import tenant_session
 from ..models import Connection, ConnectionRoute, ProcessedEvent, Record
 from ..security.crypto import tokens
 
@@ -43,6 +46,12 @@ def mark_error(db: Session, c: Connection, message: str, expired: bool = False) 
     c.status = "expired" if expired else "error"
     c.last_error = message[:300]
     events.publish(c.business_id, "connection", {"provider": c.provider, "status": c.status})
+
+
+def save_failure(business_id, provider: str, message: str, expired: bool = False) -> None:
+    """Remember a failed sync. Runs in its own transaction, because the sync's own one was rolled back."""
+    with tenant_session(business_id) as db:
+        mark_error(db, get_connection(db, business_id, provider), message, expired)
 
 
 def route(db: Session, kind: str, external_id: str, business_id) -> None:
@@ -87,3 +96,29 @@ def upsert_record(db: Session, business_id, source: str, source_ref: str, **valu
             r.open_minor = min(keep_open, values.get("open_minor", keep_open))
     db.flush()
     return r, created
+
+
+_lock = threading.Lock()
+_running: set[str] = set()
+_again: set[str] = set()
+
+
+def run_once_at_a_time(key: str, fn: Callable[[], None]) -> None:
+    """Run fn, unless it is already running for this key: then it runs once more when that finishes.
+    A burst of notifications therefore leads to at most two reads, not one per notification."""
+    with _lock:
+        if key in _running:
+            _again.add(key)
+            return
+        _running.add(key)
+    try:
+        while True:
+            fn()
+            with _lock:
+                if key not in _again:
+                    return
+                _again.discard(key)
+    finally:
+        with _lock:
+            _running.discard(key)
+            _again.discard(key)
