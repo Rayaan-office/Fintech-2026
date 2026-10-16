@@ -94,5 +94,5 @@ Every service runs in a safe test mode with fake money and data.
 | Email inbox | Mailpit (test inbox) |
 | Payment platform | Stripe sandbox (UK, GBP) |
 | Bank account | Plaid sandbox, UK test bank (statement upload also supported) |
-| Accounting software | QuickBooks Online test company |
+| Accounting software | QuickBooks Online sandbox company (UK, GBP) |
 | AI model | Any model on OpenRouter, limited to providers that don't keep or train on our data |

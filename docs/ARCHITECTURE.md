@@ -17,7 +17,7 @@ Our app connects to **types** of tools, not to one brand. Each type has a connec
 | Email inbox | Required | Bills, receipts, payment notices | Gmail, Outlook, any IMAP mailbox | Mailpit test inbox |
 | Payment platform | Optional | Money customers paid | Stripe, PayPal, Square | Stripe sandbox (UK, GBP) |
 | Bank account | Optional | Money in and out of the bank | A live bank connection such as Plaid, or a statement file (CSV/OFX) | Plaid sandbox (UK test bank), read on a schedule; statement upload also supported |
-| Accounting software | Optional | The official books | QuickBooks, Xero | QuickBooks test company |
+| Accounting software | Optional | The official books | QuickBooks, Xero | QuickBooks sandbox company (UK), read on a schedule |
 | Upload or photo | Always available | Any PDF, image or spreadsheet; a photo taken in the app | — | Built in |
 
 **How email arrives.**
@@ -73,7 +73,7 @@ Anyone with permission can compare any extracted record with its original docume
 | Reading documents | PyMuPDF, Tesseract OCR, Microsoft Presidio (personal-detail detection) |
 | In-app scanner | Phone camera in the browser, jscanify (page detection and straightening) |
 | Analysis and recommendations | pandas and numpy (calculations), RapidFuzz (comparing names, addresses and bill lines), phonenumbers (standard phone format) |
-| Scheduled checks | APScheduler inside the API (bank reads every 15 minutes; daily recommendations run) |
+| Scheduled checks | APScheduler inside the API (bank reads every 15 minutes, accounting change feed every 10 minutes; daily recommendations run) |
 | Charts | Recharts |
 | Lender pack | ReportLab (PDF) |
 | Security | argon2-cffi (password storage), pyotp (two-step sign-in), python-magic (checking file types by content), pip-audit and npm audit (dependency scanning) |
