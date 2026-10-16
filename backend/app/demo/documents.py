@@ -53,9 +53,19 @@ ACME_NEW_BANK = Supplier("Acme Supplies Ltd", ["22 High Street", "Leeds LS1 4AB"
                          "0113 496 0999", "30-90-12", "77881234", "GB 980 7806 84", "08123456", "Jane Smith")
 BRIGHTSPARK = Supplier("BrightSpark Energy Ltd", ["Energy House, 9 Station Road", "Manchester M1 2AB"],
                        "billing@brightspark-energy.co.uk", "0161 496 0456", "40-11-62", "90817263",
-                       "GB 123 4567 89", "09876543", "Tom Baker")
+                       "GB 123 4567 82", "09876543", "Tom Baker")
 CLOUDDESK = Supplier("CloudDesk Software Ltd", ["5 Silicon Way", "London EC2A 4NE"], "invoices@clouddesk.io",
-                     "020 7946 0321", "60-16-13", "31926819", "GB 246 8024 68", "11223344", "Priya Shah")
+                     "020 7946 0321", "60-16-13", "31926819", "GB 246 8024 60", "11223344", "Priya Shah")
+
+INSURANCE = Supplier("Yorkshire Business Insurance Ltd", ["3 Minster Yard", "York YO1 7HH"],
+                     "renewals@yorkshire-insure.example", "01632 960 177", "16-00-38", "55120934",
+                     "GB 333 1212 14", "07654321", "Sam Patel")
+OVEN_DOCTORS = Supplier("Oven Doctors Ltd", ["Unit 12, Canal Works", "Bradford BD1 4QT"], "jobs@ovendoctors.example",
+                        "01632 960 288", "09-01-28", "62738191", "GB 444 5656 34", "12345678", "Chris Moore")
+PACKAGING = Supplier("Packaging Direct Ltd", ["Dock Road", "Hull HU1 2AA"], "sales@packagingdirect.example",
+                     "01632 960 399", "20-32-06", "13572468", "GB 555 9090 17", "10293847", "Alex Green")
+BY_KEY = {"acme": ACME, "energy": BRIGHTSPARK, "software": CLOUDDESK, "insurance": INSURANCE,
+          "repairs": OVEN_DOCTORS, "packaging": PACKAGING}
 
 
 def _money(p: int) -> str:

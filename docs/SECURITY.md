@@ -81,7 +81,7 @@ Our roles are the essential jobs found in small-business finance, based on the u
 
 | Type | Access we take | How we trust what arrives |
 |---|---|---|
-| Email inbox | A dedicated bills inbox, never the owner's personal mailbox | Each email is processed once (tracked by its unique message ID); sender checks (SPF, DKIM, DMARC) are recorded |
+| Email inbox | A dedicated bills inbox, never the owner's personal mailbox | Each email is processed once (tracked by its unique message ID). We check the sender's signature ourselves and trust only our own mail server's SPF, DKIM and DMARC verdict. Spoofed senders, automatic replies and mail loops are refused, and the owner is told. |
 | Payment platform | Read-only key | Notifications must carry a valid signature |
 | Bank account | Read-only transaction access through Plaid, or a statement file | Plaid access tokens are encrypted and never leave the server |
 | Accounting software | Accounting data only; writes only after approval | Notifications must carry a valid signature |
@@ -89,6 +89,10 @@ Our roles are the essential jobs found in small-business finance, based on the u
 Unsigned or wrongly signed notifications are rejected.
 
 **Email in our demo and in production.** In our demo, Mailpit (a test inbox) notifies our app the moment each email arrives. In production, the business forwards bills to a dedicated inbox. We read it over IMAP, the standard way to read any mailbox, so it works with Gmail, Outlook or any other provider, and we are told as soon as new mail arrives. In both cases each email's unique message ID makes sure it is processed only once.
+
+**What we never process from email.** Some emails are refused outright and the owner gets a notification: those whose sender's domain says they are not genuine (DMARC failed), those whose signature from the sender's own domain doesn't match (forged or changed on the way), automatic replies and delivery reports, emails sent from the bills inbox itself, emails over 25 MB, and floods of more than 200 emails an hour. Other warning signs, such as a look-alike domain, still let the bill through, but it carries a warning and stops for a person. A sender can write any "this email passed its checks" header they like, so we only believe the one our own mail server adds.
+
+**Emails we send.** We only send emails a person has approved: payment reminders to customers and questions to suppliers. The address is always the one on record for that customer or supplier, never one from the AI or from a document. So if a bill changes a supplier's contact details, our question still goes to the address we trusted before. We never send to a bills inbox, which would create a loop.
 
 ## Activity log
 

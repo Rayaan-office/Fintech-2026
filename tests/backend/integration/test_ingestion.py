@@ -69,7 +69,7 @@ def test_second_opinion_agreement_is_accepted(businesses, fake_ai):
     did = ingest.receive(bid, demo.render(bill), "bill.pdf", "upload")
     assert _doc(bid, did).status == "awaiting_approval"
     with tenant_session(bid) as db:
-        roles = [e.role for e in db.execute(select(Extraction).where(Extraction.document_id == did)).scalars()]
+        roles = [e.role for e in db.execute(select(Extraction).where(Extraction.document_id == did).order_by(Extraction.created_at)).scalars()]
     assert roles == ["primary", "retry", "second_opinion"]
 
 

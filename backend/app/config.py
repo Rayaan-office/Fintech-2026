@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     mailpit_smtp_host: str = "localhost"
     mailpit_smtp_port: int = 1025
     bills_inbox_address: str = "bills@demo-business.test"
+    # We trust only the Authentication-Results header our own receiving server adds
+    mail_authserv_id: str = "mx.copilot.test"
+    email_max_bytes: int = 25 * 1024 * 1024
+    emails_per_business_per_hour: int = 200
 
     # Database
     postgres_db: str = "copilot"
