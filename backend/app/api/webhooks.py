@@ -1,6 +1,7 @@
 """Incoming notifications. Unsigned or wrongly signed notifications are rejected."""
 
 import ipaddress
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -61,8 +62,6 @@ async def quickbooks_webhook(request: Request, tasks: BackgroundTasks):
     body = await _body(request)
     if not quickbooks.verify_webhook(body, request.headers.get("intuit-signature")):
         raise HTTPException(401, "Invalid signature.")
-    import json
-
     payload = json.loads(body)
     for note in payload.get("eventNotifications", [])[:20]:
         realm = str(note.get("realmId", ""))
@@ -86,9 +85,13 @@ async def mailpit_webhook(request: Request, tasks: BackgroundTasks):
     """Mailpit runs on our own network and only tells us a message ID; we fetch the message ourselves."""
     if not _is_local(client_ip(request)):
         raise HTTPException(403, "Refused.")
-    body = await request.json()
-    message_id = str(body.get("ID", ""))[:64]
-    if not message_id.replace("-", "").isalnum():
+    limiter.check("wh-mailpit", 600, 60)
+    try:
+        body = json.loads(await _body(request))
+    except ValueError:
+        raise HTTPException(400, "Bad message ID.")
+    message_id = str(body.get("ID", "") if isinstance(body, dict) else "")[:64]
+    if not message_id or not message_id.replace("-", "").isalnum():
         raise HTTPException(400, "Bad message ID.")
     tasks.add_task(_handle_mail, message_id)
     return {"ok": True}
@@ -96,6 +99,8 @@ async def mailpit_webhook(request: Request, tasks: BackgroundTasks):
 
 def _handle_mail(message_id: str) -> None:
     try:
-        mailpit.handle_new_message(message_id)
+        for outcome in mailpit.handle_new_message(message_id):
+            log.info("email %s: %d document(s)%s", outcome.status, len(outcome.documents),
+                     f", {outcome.reason}" if outcome.reason else "")
     except Exception as exc:
         log.warning("email intake failed: %s", type(exc).__name__)

@@ -5,6 +5,7 @@
   (OpenRouter zero-data-retention routing). If none is available the call fails.
 - A daily spending cap and an hourly request limit per business.
 - Answers must match a fixed JSON schema; anything else is rejected.
+- A busy or briefly failing provider (429, 5xx) gets one more try after a short wait.
 """
 
 import json
@@ -110,6 +111,23 @@ def _check_limits(business_id) -> None:
         raise RateLimited("hourly AI request limit reached")
 
 
+RETRY_WAIT_SECONDS = 2.0
+MAX_RETRY_WAIT_SECONDS = 10.0
+
+
+def _temporary(r, error: dict, msg: str) -> bool:
+    """A busy or briefly failing provider (worth one more try), as opposed to a refusal."""
+    code = error.get("code") if isinstance(error.get("code"), int) else r.status_code
+    return code == 429 or code >= 500 or "provider returned error" in msg.lower()
+
+
+def _retry_wait(r) -> float:
+    try:
+        return max(0.0, min(float(r.headers.get("retry-after", RETRY_WAIT_SECONDS)), MAX_RETRY_WAIT_SECONDS))
+    except ValueError:  # a date instead of seconds
+        return RETRY_WAIT_SECONDS
+
+
 def _log_call(business_id, purpose, model, status, provider=None, usage=None, detail=None) -> None:
     usage = usage or {}
     with tenant_session(business_id) as db:
@@ -152,19 +170,28 @@ def complete_json(business_id, purpose: str, instructions: str, data_text: str, 
         "Authorization": f"Bearer {_s.openrouter_api_key.get_secret_value()}",
         "X-Title": "SME Finance Copilot",
     }
-    started = time.monotonic()
-    try:
-        with outbound.client(timeout=90) as http:
-            r = http.post(f"{_s.openrouter_base_url}/chat/completions", headers=headers, json=body)
-    except Exception as exc:
-        _log_call(business_id, purpose, model, "error", detail=type(exc).__name__)
-        raise AIError("AI service unreachable") from exc
+    for attempt in (1, 2):
+        started = time.monotonic()
+        try:
+            with outbound.client(timeout=90) as http:
+                r = http.post(f"{_s.openrouter_base_url}/chat/completions", headers=headers, json=body)
+        except Exception as exc:
+            _log_call(business_id, purpose, model, "error", detail=type(exc).__name__)
+            raise AIError("AI service unreachable") from exc
 
-    payload = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-    if r.status_code != 200 or payload.get("error"):
-        msg = str((payload.get("error") or {}).get("message", r.status_code))[:200]
+        payload = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        error = payload.get("error") or {}
+        if not isinstance(error, dict):
+            error = {"message": str(error)}
+        if r.status_code == 200 and not error:
+            break
+        msg = str(error.get("message", r.status_code))[:200]
         blocked = r.status_code in (400, 403) and any(
             w in msg.lower() for w in ("guardrail", "blocked", "sensitive", "injection", "policy"))
+        if attempt == 1 and not blocked and _temporary(r, error, msg):
+            _log_call(business_id, purpose, model, "error", detail=f"{msg} (trying once more)")
+            time.sleep(_retry_wait(r))
+            continue
         _log_call(business_id, purpose, model, "blocked" if blocked else "error", detail=msg)
         if blocked:
             raise GatewayBlocked(msg)

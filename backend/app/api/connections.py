@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..connectors import plaid_conn, quickbooks, stripe_conn
+from ..connectors import mailpit, plaid_conn, quickbooks, stripe_conn
 from ..connectors.common import get_connection
 from ..db import tenant_session
 from ..handlers import run_matching
@@ -83,7 +83,8 @@ def connect_plaid(p: Principal = Depends(require(Perm.CONNECT_TOOLS))):
 
 @router.post("/api/connections/{provider}/sync")
 def sync_now(provider: str, p: Principal = Depends(require(Perm.VIEW_ALL))):
-    fns = {"stripe": stripe_conn.sync, "plaid": plaid_conn.sync, "quickbooks": quickbooks.sync}
+    # For the email inbox, "sync" catches up on emails that arrived while our app wasn't listening
+    fns = {"stripe": stripe_conn.sync, "plaid": plaid_conn.sync, "quickbooks": quickbooks.sync, "mailpit": mailpit.sync}
     if provider not in fns:
         raise HTTPException(404, "Not found.")
     return _run(p, provider, fns[provider])

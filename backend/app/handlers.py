@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from . import actions, events
 from .analytics import matching
-from .models import Action, Connection, Counterparty, Document, Match, Record
+from .models import Action, Business, Connection, Counterparty, Document, Match, Record
 from .pipeline import counterparties, extract
 from .security import audit
 
@@ -101,6 +101,42 @@ def _change_bank(db: Session, action: Action, actor: str) -> dict:
 
 
 actions.handler("change_supplier_bank")(_change_bank)
+
+
+# ── Emails ─────────────────────────────────────────────────────────────────
+
+EMAIL_TO = {"send_payment_reminder": "customer", "email_supplier": "supplier"}
+
+
+def _send_email(db: Session, action: Action, actor: str) -> dict:
+    """Payload: counterparty_id, subject, body. The address is the one on record (last approved),
+    so a bill with changed contact details can't redirect our questions to a fraudster."""
+    from .connectors import email_out
+    from .privacy.redact import vault_values
+
+    p = action.payload
+    cp = db.get(Counterparty, UUID(p["counterparty_id"]))
+    if not cp or cp.kind != EMAIL_TO[action.type]:
+        raise actions.HTTPException(409, "This email isn't addressed to the right kind of contact.")
+    contact = counterparties.latest_details(db, cp.id).get("email") or {}
+    to = vault_values(action.business_id, [contact["vault"]]).get(contact["vault"]) if contact.get("vault") else None
+    if not to:
+        raise actions.HTTPException(409, f"We don't have an email address on record for {cp.display_name}.")
+    conn = db.execute(select(Connection).where(Connection.kind == "email")).scalar_one_or_none()
+    inbox = (conn.meta or {}).get("address") if conn else None
+    if not inbox:
+        raise actions.HTTPException(409, "Connect the email inbox first.")
+    biz = db.get(Business, action.business_id)
+    try:
+        message_id = email_out.send(to, p["subject"], p["body"], from_address=inbox, from_name=biz.name)  # last step
+    except email_out.SendRefused as e:
+        raise actions.HTTPException(409, str(e))
+    events.publish(action.business_id, "email_sent", {"action_id": str(action.id)})
+    return {"sent_to": contact.get("display"), "message_id": message_id}
+
+
+for _type in EMAIL_TO:
+    actions.handler(_type)(_send_email)
 
 
 # ── Matching ───────────────────────────────────────────────────────────────

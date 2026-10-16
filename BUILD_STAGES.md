@@ -9,8 +9,8 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | Stage | What | Status |
 |---|---|---|
 | 0 | Foundation and document pipeline | Done |
-| 1 | Frontend: see stages F1–F6 below | F1–F2 in progress |
-| 2 | Email inbox connector (Mailpit) | Code drafted, not tested |
+| 1 | Frontend: see stages F1–F6 below | F1–F2 done; F3–F6 drafted |
+| 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Code drafted, partly tested |
 | 4 | Bank connector (Plaid) | Code drafted, partly tested |
 | 5 | Accounting connector (QuickBooks) | Code drafted, not tested |
@@ -35,12 +35,20 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - API: sign-in, inbox and approvals, documents (upload, review view, corrections, original), activity log (list, verify, CSV export), live updates, notifications, Pause AI.
 - Tests: 73 passing (unit, integration, security, regression), including the full fraud drill through the API.
 
-## Stage 2: Email inbox connector (Mailpit)
+## Stage 2: Email inbox connector (Mailpit) (done)
 
-- Notification endpoint, Message-ID dedupe, sender checks (Authentication-Results and DKIM).
-- Demo emails: Acme, BrightSpark, CloudDesk, insurance and repair bills from the story; the fraud drill email.
-- Sending approved emails (reminders, supplier questions).
-- Tests: intake, duplicates, refused senders, attachments, body-only emails.
+- Intake that works for any inbox (`connectors/email_in.py`); Mailpit is only the transport. Production would use the same code behind an IMAP reader.
+- Mailpit's notification gives a message ID; we fetch the email ourselves, route it by To, Cc or Bcc to the business's bills inbox, and process it once per Message-ID (a content fingerprint if there is none).
+- Sender checks: our own DKIM check, plus SPF, DKIM and DMARC from our receiving server's Authentication-Results only (headers under any other server's name are ignored). Demo domains get local signing keys in `backend/.local/` (git-ignored).
+- Refused, with a notification to the owner: DMARC failed, a broken signature from the sender's own domain, automatic replies and delivery reports, mail from the bills inbox itself, over 25 MB, more than 200 an hour.
+- Each attachment becomes a document (up to 10; files inside a forwarded email count, logos in the email's text don't); emails with no attachment become a text document.
+- "Sync" on the email card catches up on emails that arrived while the app wasn't listening.
+- Sending approved emails: payment reminders (to customers) and supplier questions, always to the address on record, never to a bills inbox; plain text, marked as automatic so out-of-office replies don't loop. Drafting them is Stage 7.
+- Demo emails from the story: `cd backend && uv run python -m app.demo.emails` sends Acme's stock bill, BrightSpark's energy bill, the insurance renewal, the oven repair (unsigned), the CloudDesk card receipt (text only), the fraud drill (look-alike domain) and a spoofed Acme email (refused). Add names to send only some, e.g. `fraud spoof`. Message-IDs are fixed, so sending twice shows duplicates being ignored.
+- Fixed the demo suppliers' phone and VAT numbers, which weren't valid and so weren't recognised and hidden.
+- AI gateway: a temporary provider error (429, 5xx, "Provider returned error") now gets one more try after a short wait (2 s, or the provider's Retry-After up to 10 s). Found in the live test, where one such error sent the fraud email to review before its checks ran.
+- Live test with the real AI: the Acme bill passed first time; the fraud email was caught (changed bank details, look-alike sender) and the bookkeeper could not approve the bank change or the bill.
+- Tests: 66 new (30 unit, 16 integration through the real Mailpit, 20 regression); 139 backend tests pass in all. Bugs fixed in the drafted code: text-only emails were refused as raw email, a Bcc to the inbox was dropped (and an email to two businesses reached only one), a malformed notification caused a server error, and any sender could forge the sender-check verdict.
 
 ## Stage 3: Payment platform connector (Stripe)
 
@@ -73,7 +81,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 
 ## Stage 7: Approvals, recommendations, financing and assistant
 
-- Remaining action handlers: post to accounting, payment reminders, supplier emails, lender pack sharing.
+- Remaining action handlers: post to accounting, lender pack sharing. (Sending reminders and supplier emails was built in Stage 2; Stage 7 drafts them.)
 - Recommendations agent (rules first, AI words them, fact-checked), dismiss and mute.
 - Business profile, financing catalog, matching, cost, forecast effect, readiness, lender pack PDF.
 - Chat assistant (LangGraph) with read-only tools and fact-checked answers.

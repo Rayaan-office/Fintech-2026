@@ -26,3 +26,6 @@ tests/e2e/playwright-report/
 
 # Kept locally, not published
 docs/DESIGN.md
+
+# Demo email signing keys (generated locally)
+backend/.local/
