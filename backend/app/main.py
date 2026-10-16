@@ -1,13 +1,14 @@
 """SME Finance Copilot API."""
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import handlers  # noqa: F401  (registers what approved actions do)
+from . import handlers, scheduler  # noqa: F401  (handlers registers what approved actions do)
 from .api import activity, auth, connections, documents, inbox, webhooks
 from .config import get_settings
 from .security.http import SecurityHeadersMiddleware
@@ -15,8 +16,17 @@ from .security.http import SecurityHeadersMiddleware
 _s = get_settings()
 log = logging.getLogger("copilot")
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    scheduler.start()
+    yield
+    scheduler.stop()
+
+
 app = FastAPI(
     title="SME Finance Copilot API",
+    lifespan=lifespan,
     version="1",
     # The developer documentation page exists only in development
     docs_url="/api/docs" if _s.is_dev else None,
