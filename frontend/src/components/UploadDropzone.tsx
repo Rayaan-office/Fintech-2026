@@ -3,7 +3,8 @@ import { useRef, useState, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 
-const MAX_MB = 20;
+// The server's limit
+const MAX_MB = 15;
 
 /** Drop files, pick them, or (on a phone) take a photo. Files are checked again on the server. */
 export function UploadDropzone({
@@ -14,7 +15,7 @@ export function UploadDropzone({
   camera = false,
   className,
 }: {
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[], fromCamera: boolean) => void;
   pending: boolean;
   accept: string;
   hint: string;
@@ -26,12 +27,12 @@ export function UploadDropzone({
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const take = (list: FileList | null) => {
+  const take = (list: FileList | null, fromCamera = false) => {
     const files = Array.from(list ?? []);
     const tooBig = files.filter((f) => f.size > MAX_MB * 1024 * 1024);
     setError(tooBig.length ? `${tooBig.map((f) => f.name).join(", ")} ${tooBig.length === 1 ? "is" : "are"} larger than ${MAX_MB} MB. Try a smaller scan or photo.` : null);
     const ok = files.filter((f) => f.size <= MAX_MB * 1024 * 1024);
-    if (ok.length) onFiles(ok);
+    if (ok.length) onFiles(ok, fromCamera);
   };
 
   const onDrop = (e: DragEvent) => {
@@ -74,8 +75,8 @@ export function UploadDropzone({
           {error}
         </p>
       )}
-      <input ref={fileRef} type="file" accept={accept} multiple hidden onChange={(e) => { take(e.target.files); e.target.value = ""; }} />
-      {camera && <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { take(e.target.files); e.target.value = ""; }} />}
+      <input ref={fileRef} type="file" data-testid="file-input" accept={accept} multiple hidden onChange={(e) => { take(e.target.files); e.target.value = ""; }} />
+      {camera && <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { take(e.target.files, true); e.target.value = ""; }} />}
     </div>
   );
 }
