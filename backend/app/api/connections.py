@@ -1,6 +1,6 @@
 """Connections page: connect, sync and disconnect the business's tools."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ CARDS = [
     ("accounting", "quickbooks", "Accounting software", "The official books", False),
 ]
 PROVIDER_LABEL = {"mailpit": "Mailpit test inbox", "stripe": "Stripe sandbox (UK)", "plaid": "Plaid sandbox (UK)",
-                  "quickbooks": "QuickBooks test company"}
+                  "quickbooks": "QuickBooks sandbox (UK)"}
 
 
 def _card(c: Connection | None, kind, provider, title, what, required) -> dict:
@@ -52,9 +52,7 @@ def list_connections(p: Principal = Depends(require(Perm.VIEW_ALL)), db: Session
 
 def _failure(provider: str, exc: Exception) -> tuple[int, str, bool]:
     """(HTTP status, message for the person, connection has expired)."""
-    if isinstance(exc, quickbooks.NeedsReconnect):
-        return 409, "The QuickBooks connection has expired. Reconnect.", True
-    if isinstance(exc, plaid_conn.PlaidError):
+    if isinstance(exc, (plaid_conn.PlaidError, quickbooks.QBOError)):
         return (409 if exc.expired or exc.code == "NOT_CONNECTED" else 502), exc.for_person(), exc.expired
     if isinstance(exc, stripe_conn.StripeError):
         if exc.status == 401:
@@ -70,7 +68,7 @@ def _failure(provider: str, exc: Exception) -> tuple[int, str, bool]:
 
 def _never_connected(exc: Exception) -> bool:
     """Nothing to remember on the card: it already says "not connected"."""
-    return isinstance(exc, plaid_conn.PlaidError) and exc.code == "NOT_CONNECTED"
+    return isinstance(exc, (plaid_conn.PlaidError, quickbooks.QBOError)) and exc.code == "NOT_CONNECTED"
 
 
 def _run(p: Principal, provider: str, fn, *args):
@@ -115,7 +113,9 @@ def sync_now(provider: str, p: Principal = Depends(require(Perm.VIEW_ALL))):
 def disconnect(provider: str, p: Principal = Depends(require(Perm.CONNECT_TOOLS)), db: Session = Depends(tenant_db)):
     if provider == "plaid":
         plaid_conn.disconnect(db, p.business_id)
-    elif provider in ("stripe", "quickbooks"):
+    elif provider == "quickbooks":
+        quickbooks.disconnect(db, p.business_id)
+    elif provider == "stripe":
         c = get_connection(db, p.business_id, provider)
         c.token_enc, c.status = None, "disconnected"
     else:
@@ -124,31 +124,59 @@ def disconnect(provider: str, p: Principal = Depends(require(Perm.CONNECT_TOOLS)
     return {"ok": True}
 
 
+QBO_COOKIE = "qbo_signin"
+
+
+def _signin_cookie(response: Response, nonce: str) -> None:
+    response.set_cookie(QBO_COOKIE, nonce, max_age=600, httponly=True, samesite="lax", path="/connect/quickbooks",
+                        secure=_s.app_base_url.startswith("https:"))
+
+
 @router.get("/api/connections/quickbooks/start")
-def qbo_start(p: Principal = Depends(require(Perm.CONNECT_TOOLS))):
-    return {"url": quickbooks.authorize_url(p.business_id, p.user_id)}
+def qbo_start(response: Response, p: Principal = Depends(require(Perm.CONNECT_TOOLS))):
+    """The Intuit sign-in address. This browser keeps a one-time value that the callback checks."""
+    url, nonce = quickbooks.authorize_url(p.business_id, p.user_id)
+    _signin_cookie(response, nonce)
+    return {"url": url}
+
+
+@router.get("/connect/quickbooks/start")
+def qbo_go(p: Principal = Depends(require(Perm.CONNECT_TOOLS))):
+    """The same, as a link: goes straight to Intuit's sign-in page."""
+    url, nonce = quickbooks.authorize_url(p.business_id, p.user_id)
+    r = RedirectResponse(url, status_code=303)
+    _signin_cookie(r, nonce)
+    return r
 
 
 @router.get("/connect/quickbooks/callback")
 def qbo_callback(request: Request, code: str | None = None, state: str | None = None, realmId: str | None = None,
                  error: str | None = None, p: Principal = Depends(current_principal)):
     back = f"{_s.app_base_url}/connections"
+
+    def done(outcome: str) -> RedirectResponse:
+        r = RedirectResponse(f"{back}?qbo={outcome}", status_code=303)
+        r.delete_cookie(QBO_COOKIE, path="/connect/quickbooks")  # used once
+        return r
+
     if error or not code or not state or not realmId:
-        return RedirectResponse(f"{back}?qbo=cancelled", status_code=303)
+        return done("cancelled")
     try:
-        bid, uid = quickbooks.check_state(state)
-    except ValueError:
-        return RedirectResponse(f"{back}?qbo=failed", status_code=303)
+        bid, uid = quickbooks.check_state(state, request.cookies.get(QBO_COOKIE))
+    except (ValueError, KeyError):
+        return done("failed")
     if bid != str(p.business_id) or uid != str(p.user_id) or not p.can(Perm.CONNECT_TOOLS):
-        return RedirectResponse(f"{back}?qbo=failed", status_code=303)
-    with tenant_session(p.business_id) as db:
-        try:
-            quickbooks.finish_connect(db, p.business_id, code, realmId)
-        except (quickbooks.NeedsReconnect, PermissionError):
-            return RedirectResponse(f"{back}?qbo=failed", status_code=303)
-        audit.record(db, p.business_id, p.actor, "connection_added", subject="quickbooks")
+        return done("failed")
+    try:
+        with tenant_session(p.business_id) as db:
+            quickbooks.finish_connect(db, p.business_id, code[:512], realmId)
+            audit.record(db, p.business_id, p.actor, "connection_added", subject="quickbooks")
+    except PermissionError:
+        return done("taken")
+    except quickbooks.QBOError:
+        return done("failed")
     try:
         _run(p, "quickbooks", quickbooks.sync, True)
     except HTTPException:
-        return RedirectResponse(f"{back}?qbo=connected_sync_failed", status_code=303)
-    return RedirectResponse(f"{back}?qbo=connected", status_code=303)
+        return done("connected_sync_failed")
+    return done("connected")

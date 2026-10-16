@@ -13,7 +13,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Done |
-| 5 | Accounting connector (QuickBooks) | Code drafted, not tested |
+| 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Matching drafted |
 | 7 | Approvals, recommendations, financing and assistant | Approval engine done |
 | 8 | Frontend: see stages F3–F6 below | Not started |
@@ -72,13 +72,18 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - Tests: 25 new (4 unit, 17 integration against a fake Plaid, 4 regression) plus 4 live contract tests; 201 backend tests pass. Bugs fixed in the drafted code: only the last 30 days ever arrived, reconnecting doubled every bank transaction, a change at the bank during paging failed the sync, and a pending payment lost its record when it posted.
 - Live check: all 266 transactions and the balance arrive from the real sandbox in our shapes, and an expired login is reported as expired. The demo business's existing bank connection was reconnected through the new code: all 266 records carried over, none duplicated or voided. The schedule, running in the API, then read the bank on its own.
 
-## Stage 5: Accounting connector (QuickBooks)
+## Stage 5: Accounting connector (QuickBooks) (done)
 
-- Sign-in with Intuit, token refresh, full sync and change-feed polling, signed webhooks.
-- Seed the sandbox company from the story (backdated invoices, bills, payments).
-- Approved bills posted with the original attached.
-- Needs a UK sandbox company so amounts are in GBP.
-- Tests: OAuth state, mapping, posting, webhook signature.
+- The demo books are a UK QuickBooks sandbox company (GB, pounds, UK VAT codes). Intuit fills a new sandbox company with its own sample customers and transactions; those stay alongside ours.
+- Sign-in with Intuit: the link is signed, runs out after 10 minutes, and only works in the browser that started it (a one-time cookie, cleared after use). Only owners and finance managers can connect. One QuickBooks company belongs to one business. `/connect/quickbooks/start` goes straight to Intuit's sign-in page.
+- Tokens are encrypted. Intuit replaces the refresh token on every refresh, so a refreshed token is saved at once in its own transaction. If Intuit refuses it, the card says "The QuickBooks connection has expired. Reconnect." and the schedule waits for the person. Disconnecting gives the access back to Intuit.
+- Sync (`connectors/quickbooks.py`): payment terms, customers, suppliers, invoices, bills, customer payments, bill payments and purchases, with VAT, lines, the expense account and which payment settled which invoice or bill. Amounts are converted to pence exactly; every row is checked against a fixed format and bad ones are skipped and counted, never voided. Voided items (QuickBooks sets them to zero) and deleted ones are void with us.
+- Keeping up to date: the background schedule reads QuickBooks' change feed every 10 minutes (`BOOKS_POLL_MINUTES`), starting a few minutes before the last read so nothing falls in between. The feed only keeps 30 days and stops at 1,000 changes per type, so an older or cut-short feed means a full read, which also voids anything QuickBooks no longer has. Quiet reads don't fill the activity log.
+- Notifications, for when there is a public address: signature checked, current (CloudEvents) and older formats, each handled once, and one change-feed read per company however many arrive.
+- Adding approved bills (level 3, one person): the bill goes in with the plain VAT code matching its rate (for example 20.0% S, never reverse charge), to the account the supplier's earlier bills used, with the original attached. The supplier is found by name or added. Each write carries a request id, so if QuickBooks fails partway the approval isn't used up, and approving again doesn't make a second bill. A bill we added is recognised on the next read, so it is never counted twice; if it is paid in QuickBooks, our record shows that.
+- Demo books (`cd backend && uv run python -m app.demo.books`): the story's five customers, six suppliers, products, 117 invoices, 44 bills and 146 payments, backdated to their story dates with 20% VAT. The five bills the demo sends by email are left out; they reach QuickBooks after approval. Refuses a company outside the UK; running it again adds nothing.
+- Tests: 39 new (29 integration against a fake QuickBooks, 10 regression); 240 backend tests pass. Bugs fixed in the drafted code: a failed read could lose the refreshed sign-in for good, changes made during the first read were never picked up, deleted bills stayed open, voided invoices counted as paid, a month without reading broke every read, a second company overwrote the first one's records, retrying an approved bill added it twice, a bill we added came back as a second bill, and the sign-in link could be finished in another browser.
+- Live check with the UK sandbox: connected through Intuit's sign-in, then filled with the demo books. Every invoice and bill total matched the story to the penny, and the next read took in the 307 new items through the change feed. The emailed Acme bill AS-1005 was added through the approval handler: the right supplier, 20.0% S VAT, £658.56 exactly, the PDF attached, and the next read did not count it twice. The schedule, running in the API, then read QuickBooks on its own.
 
 ## Stage 6: Ledger, matching, forecast and analysis
 
@@ -90,7 +95,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 
 ## Stage 7: Approvals, recommendations, financing and assistant
 
-- Remaining action handlers: post to accounting, lender pack sharing. (Sending reminders and supplier emails was built in Stage 2; Stage 7 drafts them.)
+- Remaining action handler: lender pack sharing. (Sending reminders and supplier emails was built in Stage 2, adding approved bills to the accounting software in Stage 5; Stage 7 drafts the emails.)
 - Recommendations agent (rules first, AI words them, fact-checked), dismiss and mute.
 - Business profile, financing catalog, matching, cost, forecast effect, readiness, lender pack PDF.
 - Chat assistant (LangGraph) with read-only tools and fact-checked answers.

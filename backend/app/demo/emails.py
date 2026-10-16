@@ -67,18 +67,27 @@ def _from_story(b: story.Bill) -> documents.Bill:
     return documents.Bill(documents.BY_KEY[b.supplier_key], b.number, b.issue, b.due, b.lines)
 
 
+def emailed_bills(s: story.Story) -> dict[str, story.Bill]:
+    """The story's bills that the demo sends by email. They reach the accounting software only
+    after someone approves them, so they are left out when the books are filled in."""
+    latest: dict[str, list[story.Bill]] = {}
+    for b in s.bills:
+        latest.setdefault(b.supplier_key, []).append(b)
+    return {
+        "acme": next(b for b in reversed(latest["acme"]) if not b.paid_on),
+        "energy": latest["energy"][-1],
+        "software": latest["software"][-1],
+        "insurance": next(b for b in latest["insurance"] if b.number == "YBI-2026-118"),
+        "repairs": next(b for b in latest["repairs"] if b.number == "OD-4471"),
+    }
+
+
 def build(to: str | None = None) -> list[DemoEmail]:
     to = to or _s.bills_inbox_address
     s = story.build()
-    latest = {}
-    for b in s.bills:
-        latest.setdefault(b.supplier_key, [])
-        latest[b.supplier_key].append(b)
-    acme = next(b for b in reversed(latest["acme"]) if not b.paid_on)
-    energy = latest["energy"][-1]
-    software = latest["software"][-1]
-    insurance = next(b for b in latest["insurance"] if b.number == "YBI-2026-118")
-    repairs = next(b for b in latest["repairs"] if b.number == "OD-4471")
+    picked = emailed_bills(s)
+    acme, energy, software = picked["acme"], picked["energy"], picked["software"]
+    insurance, repairs = picked["insurance"], picked["repairs"]
     out = [
         _bill_email("acme", "Acme Supplies' weekly stock bill (flour price up 18%)", documents.ACME,
                     _from_story(acme), to,

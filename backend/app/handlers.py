@@ -6,8 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import actions, events
+from . import actions, archive, events
 from .analytics import matching
+from .connectors import quickbooks
 from .models import Action, Business, Connection, Counterparty, Document, Match, Record
 from .pipeline import counterparties, extract
 from .security import audit
@@ -58,12 +59,12 @@ def _approve_document(db: Session, action: Action, actor: str) -> dict:
     doc.record_id = rec.id
     doc.status = "approved"
     run_matching(db, doc.business_id, actor)
-    if _accounting_connected(db) and kind in ("bill", "invoice"):
+    if _accounting_connected(db) and kind == "bill":
         actions.propose(db, doc.business_id, "post_to_accounting", requested_by="ai:ingestion",
                         payload={"record_id": str(rec.id), "document_id": str(doc.id)},
-                        summary=f"Add {f.get('counterparty_name')} {kind} of £{total / 100:,.2f} to QuickBooks, "
+                        summary=f"Add {f.get('counterparty_name')} bill of £{total / 100:,.2f} to QuickBooks, "
                                 "with the original attached",
-                        effects=["Create the " + kind + " in QuickBooks", "Attach the original document"],
+                        effects=["Create the bill in QuickBooks", "Attach the original document"],
                         amount_minor=total)
     events.publish(doc.business_id, "document", {"id": str(doc.id), "status": "approved"})
     return {"record_id": str(rec.id)}
@@ -101,6 +102,34 @@ def _change_bank(db: Session, action: Action, actor: str) -> dict:
 
 
 actions.handler("change_supplier_bank")(_change_bank)
+
+
+# ── Accounting software ────────────────────────────────────────────────────
+
+
+def _post_to_accounting(db: Session, action: Action, actor: str) -> dict:
+    """Add the approved bill to QuickBooks with the original attached. If QuickBooks can't be
+    reached, the approval isn't used up: the person sees why and can approve again, and QuickBooks
+    recognises the repeat (same request id) instead of making a second bill."""
+    p = action.payload
+    rec = db.get(Record, UUID(p["record_id"]))
+    doc = db.get(Document, UUID(p["document_id"]))
+    if not rec or not doc or rec.status == "void" or doc.record_id != rec.id:
+        raise actions.HTTPException(409, "This bill was undone or changed, so it can't be added to QuickBooks.")
+    if rec.kind != "bill":
+        raise actions.HTTPException(409, "Only bills can be added to the accounting software.")
+    original = archive.get(doc.object_key, doc.sha256)
+    try:
+        return quickbooks.post_bill(db, action.business_id, rec, original, doc.filename, doc.mime,
+                                    request_key=str(action.id))
+    except quickbooks.QBOError as exc:
+        if exc.code in ("NO_SUPPLIER", "CURRENCY", "NO_TAX_CODE", "NO_EXPENSE_ACCOUNT"):
+            raise  # nothing a retry would fix: the action is marked failed with the reason
+        raise actions.HTTPException(409 if exc.expired or exc.code == "NOT_CONNECTED" else 502,
+                                    exc.for_person()) from None
+
+
+actions.handler("post_to_accounting")(_post_to_accounting)
 
 
 # ── Emails ─────────────────────────────────────────────────────────────────

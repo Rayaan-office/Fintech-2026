@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     plaid_country_codes: str = "GB"
     # How often the background poller reads each connected bank (Plaid can't notify us without a public address)
     bank_poll_minutes: int = 15
+    books_poll_minutes: int = 10
     scheduler_enabled: bool = True
 
     # Accounting software

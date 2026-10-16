@@ -26,12 +26,16 @@ async def _body(request: Request) -> bytes:
 
 
 def _resync(provider: str, business_id) -> None:
-    fn = {"stripe": stripe_conn.sync, "quickbooks": quickbooks.sync}[provider]
+    if provider == "quickbooks":
+        from .. import scheduler  # same read as the background schedule
+
+        run_once_at_a_time(f"quickbooks:{business_id}", lambda: scheduler.read("quickbooks", business_id))
+        return
 
     def once():
         try:
             with tenant_session(business_id) as db:
-                fn(db, business_id)
+                stripe_conn.sync(db, business_id)
         except Exception as exc:
             log.warning("%s resync after notification failed: %s", provider, type(exc).__name__)
             save_failure(business_id, provider, f"Updating after a notification failed ({type(exc).__name__}).")
@@ -70,16 +74,29 @@ async def stripe_webhook(request: Request, tasks: BackgroundTasks):
 
 @router.post("/quickbooks")
 async def quickbooks_webhook(request: Request, tasks: BackgroundTasks):
+    """QuickBooks only says which company changed; we then read its change feed ourselves."""
+    limiter.check(f"wh-qbo:{client_ip(request)}", 300, 60)
     body = await _body(request)
     if not quickbooks.verify_webhook(body, request.headers.get("intuit-signature")):
         raise HTTPException(401, "Invalid signature.")
-    payload = json.loads(body)
-    for note in payload.get("eventNotifications", [])[:20]:
-        realm = str(note.get("realmId", ""))
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(400, "Not JSON.")
+    due = set()
+    for event_id, realm in quickbooks.notices(payload):
         with global_session() as db:
             bid = lookup_route(db, "quickbooks", realm)
-        if bid:
-            tasks.add_task(_resync, "quickbooks", bid)
+        if not bid:
+            continue
+        with tenant_session(bid) as db:
+            c = get_connection(db, bid, "quickbooks", create=False)
+            if not c or c.status != "connected" or seen_before(db, bid, "quickbooks", event_id):
+                continue
+            audit.record(db, bid, "quickbooks", "notification_received", details={"id": event_id})
+        due.add(bid)
+    for bid in due:  # one read per company, however many notifications
+        tasks.add_task(_resync, "quickbooks", bid)
     return {"ok": True}
 
 
