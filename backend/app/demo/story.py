@@ -9,6 +9,8 @@ Built-in patterns the app should find:
   changed bank details (fraud drill, sent separately).
 - CloudDesk's subscription keeps creeping up (spending creep).
 - VAT, payroll and rent land close together next month (forecast shortfall -> financing).
+- Amsterdam Bakehouse pays by international transfer, and each payment arrives £12 to £25 short
+  (bank charges on the way); one of its invoices is overdue (payment costs, reminders).
 """
 
 import random
@@ -27,6 +29,7 @@ class Party:
     late_days: int = 0
     jitter: int = 2
     email: str = ""
+    abroad: bool = False  # pays by international transfer
 
 
 CUSTOMERS = [
@@ -35,6 +38,7 @@ CUSTOMERS = [
     Party("Corner Deli", 14, 0, 1, "orders@cornerdeli.example"),
     Party("Green Leaf Bistro", 14, 3, 3, "finance@greenleaf.example"),
     Party("Harrogate Grand Hotel", 30, 5, 5, "ap@harrogategrand.example"),
+    Party("Amsterdam Bakehouse BV", 30, 4, 3, "accounts@amsterdambakehouse.example", abroad=True),
 ]
 SUPPLIERS = {
     "acme": Party("Acme Supplies Ltd", 30, 0, 0, "accounts@acme-supplies.co.uk"),
@@ -54,6 +58,7 @@ class Invoice:
     due: date
     lines: list[tuple[str, int, int]]
     paid_on: date | None = None
+    short: int = 0  # taken by the banks on the way: the payment arrives this much short
 
     @property
     def total(self) -> int:
@@ -101,7 +106,7 @@ class Story:
 # Typical order value before VAT, in pounds
 ORDER_SIZES = {
     "Station Coffee Co": (820, 980), "Bright Cafe": (300, 400), "Corner Deli": (210, 280),
-    "Green Leaf Bistro": (260, 340), "Harrogate Grand Hotel": (700, 900),
+    "Green Leaf Bistro": (260, 340), "Harrogate Grand Hotel": (700, 900), "Amsterdam Bakehouse BV": (280, 360),
 }
 PRODUCTS = [("Sourdough loaves", 420), ("Croissants (box of 12)", 1450), ("Seeded rye loaves", 460),
             ("Cinnamon buns (box of 12)", 1650)]
@@ -113,6 +118,8 @@ def build(seed: int = 2026) -> Story:
     inv_no = 2001
     # ── Customer invoices: weekly for most, fortnightly for the hotel
     for cust in CUSTOMERS:
+        if cust.abroad:
+            continue  # below, with its own random numbers, so the rest of the story stays the same
         step = 14 if cust.terms == 30 else 7
         d = START + timedelta(days=rnd.randint(0, 4))
         while d <= TODAY - timedelta(days=1):
@@ -130,6 +137,8 @@ def build(seed: int = 2026) -> Story:
                 s.bank.append(BankLine(pay, inv.total, f"{cust.name.upper()} REF {inv.number}"))
             s.invoices.append(inv)
             d += timedelta(days=step)
+
+    inv_no = _abroad(s, random.Random(seed + 1), inv_no)
 
     # ── Payments in the first weeks for invoices issued before the story starts
     old_no = 1960
@@ -217,6 +226,35 @@ def build(seed: int = 2026) -> Story:
 
     s.bank.sort(key=lambda b: b.day)
     return s
+
+
+def _abroad(s: Story, rnd: random.Random, inv_no: int) -> int:
+    """Amsterdam Bakehouse: fortnightly orders paid by international transfer, each arriving £12 to £25
+    short. Its newest invoice that is more than a week overdue is still unpaid."""
+    cust = next(c for c in CUSTOMERS if c.abroad)
+    mine = []
+    d = START + timedelta(days=rnd.randint(5, 9))
+    while d <= TODAY - timedelta(days=1):
+        lo, hi = ORDER_SIZES[cust.name]
+        target = rnd.randint(lo, hi) * 100
+        (n1, p1), (n2, p2) = rnd.sample(PRODUCTS, 2)
+        lines = [(n1, max(1, round(target * 0.6 / p1)), p1), (n2, max(1, round(target * 0.4 / p2)), p2)]
+        inv = Invoice(cust.name, f"INV-{inv_no}", d, d + timedelta(days=cust.terms), lines)
+        inv_no += 1
+        pay = inv.due + timedelta(days=cust.late_days + rnd.randint(-cust.jitter, cust.jitter))
+        if pay < TODAY:
+            inv.paid_on, inv.short = pay, rnd.randint(12_00, 25_00)
+        mine.append(inv)
+        d += timedelta(days=14)
+    overdue = [i for i in mine if i.due < TODAY - timedelta(days=7)]
+    if overdue:
+        overdue[-1].paid_on, overdue[-1].short = None, 0
+    for inv in mine:
+        if inv.paid_on:
+            s.bank.append(BankLine(inv.paid_on, inv.total - inv.short,
+                                   f"INTL PAYMENT AMSTERDAM BAKEHOUSE BV SWIFT REF {inv.number}"))
+    s.invoices.extend(mine)
+    return inv_no
 
 
 def current_balance(story: Story) -> int:

@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     stripe_api_key: SecretStr
     stripe_seed_key: SecretStr | None = None
     stripe_webhook_secret: SecretStr
+    # Optional second restricted key, only for card payment links in approved reminders
+    stripe_links_key: SecretStr | None = None
 
     # Bank
     plaid_client_id: str

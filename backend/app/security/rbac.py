@@ -102,6 +102,8 @@ ACTIONS: dict[str, ActionSpec] = {
     "share_lender_pack": ActionSpec(Level.OUTSIDE, Perm.SHARE_LENDER_PACK, "Share a lender pack"),
     "change_supplier_bank": ActionSpec(Level.HIGH_RISK, Perm.APPROVE_HIGH_RISK, "Change supplier bank details"),
     "large_payment": ActionSpec(Level.HIGH_RISK, Perm.APPROVE_HIGH_RISK, "Large or first-time payment"),
+    # Getting paid: closes what is left after a payment arrived short (finance managers and owners)
+    "record_bank_charge": ActionSpec(Level.SMALL_CHANGE, Perm.APPROVE_PAYMENT, "Record a bank charge"),
 }
 
 # Never available to the AI, whatever it asks for

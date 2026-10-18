@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import handlers, scheduler  # noqa: F401  (handlers registers what approved actions do)
 from .api import activity, advice, assistant, auth, connections, documents, inbox, insights, webhooks
 from .api import learning as learning_api
+from .api import payments
 from .config import get_settings
 from .security.http import SecurityHeadersMiddleware
 
@@ -70,3 +71,4 @@ app.include_router(advice.router)
 app.include_router(assistant.router)
 app.include_router(webhooks.router)
 app.include_router(learning_api.router)
+app.include_router(payments.router)

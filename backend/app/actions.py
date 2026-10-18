@@ -117,7 +117,13 @@ def _may_approve(p, action: Action) -> str | None:
     if action.type in ("schedule_payment", "large_payment") and Role.OWNER not in p.roles:
         if p.approval_limit_minor is not None and (action.amount_minor or 0) > p.approval_limit_minor:
             return "This is above your approval limit."
+    if _final_notice(action) and Role.OWNER not in p.roles:
+        return "Only a business owner can approve a final notice."
     return None
+
+
+def _final_notice(action: Action) -> bool:
+    return action.type == "send_payment_reminder" and (action.payload or {}).get("stage") == 3
 
 
 def decide(db: Session, p, action_id, decision: str) -> Action:
@@ -180,6 +186,8 @@ def undo(db: Session, p, action_id) -> Action:
 
 
 def approvers_needed(action: Action) -> str:
+    if _final_notice(action):
+        return "A business owner"
     if action.level == Level.HIGH_RISK:
         return "Two people: business owners or finance managers"
     if action.level == Level.OUTSIDE:

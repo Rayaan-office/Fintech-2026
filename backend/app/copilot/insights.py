@@ -12,7 +12,7 @@ The AI call happens outside any database transaction.
 
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import TypedDict
 from uuid import UUID
@@ -208,15 +208,19 @@ class Draft:
     to: str | None  # the address on record, masked
     contact_as_of: str | None
     written: wording.Written
+    # Added to the action for a staged reminder (copilot/reminders.py)
+    extra_payload: dict = field(default_factory=dict)
+    extra_effects: list[str] = field(default_factory=list)
+    extra_reasons: list[str] = field(default_factory=list)
 
 
 def draft(db: Session, business_id, action_type: str, cp: Counterparty, purpose: str, facts: dict,
-          fallback_body: str, contact_as_of: str | None = None) -> Draft:
+          fallback_body: str, contact_as_of: str | None = None, subject: str | None = None) -> Draft:
     """An email for a person to check, worded by the AI from the facts (fact-checked), or from our template."""
     biz = ledger.business(db)
     names = wording.Names(db)
-    subject = {"email_supplier": f"A question from {biz.name}",
-               "send_payment_reminder": f"Payment reminder from {biz.name}"}[action_type]
+    subject = subject or {"email_supplier": f"A question from {biz.name}",
+                          "send_payment_reminder": f"Payment reminder from {biz.name}"}[action_type]
     body = f"Hello {cp.display_name},\n\n{fallback_body}\n\nKind regards,\n{biz.name}"
     w = wording.write(business_id, "draft_email", EMAIL_INSTRUCTIONS,
                       {"from business": biz.name, "to": cp.display_name, "what to ask": purpose, **facts}, names,
@@ -250,6 +254,10 @@ def draft_for_recommendation(db: Session, rec: Recommendation) -> Draft:
     cp = db.get(Counterparty, rec.counterparty_id) if rec.counterparty_id else None
     if not cp or step.get("action") not in ("email_supplier", "send_payment_reminder"):
         raise LookupError("this recommendation has no email to draft")
+    if rec.kind == "chase_overdue":  # a reminder in three steps
+        from . import reminders
+
+        return reminders.draft(db, rec, cp)
     facts = dict((rec.facts or {}).get("facts", {}))
     if step["action"] == "send_payment_reminder":
         facts, body = reminder_facts(db, cp)

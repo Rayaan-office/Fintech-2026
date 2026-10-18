@@ -63,3 +63,7 @@ export function useLiveUpdates(enabled = true) {
 
 // Learning from decisions: decisions and newly read documents change what we've learned
 for (const kind of ["action", "document", "recommendations"]) AFFECTS[kind]?.push("learning");
+// Getting paid: approvals and sent reminders change what is owed and what arrived short
+AFFECTS.action!.push("getting-paid");
+AFFECTS.matches!.push("getting-paid");
+AFFECTS.recommendations!.push("getting-paid");

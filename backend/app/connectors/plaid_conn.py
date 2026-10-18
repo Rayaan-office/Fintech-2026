@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from ..analytics import methods
 from ..config import get_settings
 from ..models import Account, Record
 from ..pipeline.counterparties import find_or_create
@@ -88,6 +89,7 @@ class PlaidTxn(BaseModel, extra="ignore"):
     pending: bool = False
     pending_transaction_id: Id | None = None
     personal_finance_category: dict | None = None
+    payment_channel: str | None = Field(None, max_length=20)  # online | in store | other
 
 
 class Removed(BaseModel, extra="ignore"):
@@ -267,7 +269,8 @@ def _save_txn(db: Session, business_id, t: PlaidTxn, acct: Account, item: str) -
         open_minor=0, currency=t.iso_currency_code, date=t.date,
         status="pending" if t.pending else "posted", counterparty_id=cp.id if cp else None, account_id=acct.id,
         reference=desc[:200], description=desc, category=category or (cp.category if cp else None),
-        external={"item": item, "payout_id": _payout_ref(desc)},
+        method=methods.from_bank(desc, t.iso_currency_code, acct.currency, t.payment_channel),
+        external={"item": item, "payout_id": _payout_ref(desc), "channel": t.payment_channel},
     )
     return carried
 

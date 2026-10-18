@@ -9,10 +9,10 @@ import os
 import sys
 from pathlib import Path
 
+TEST_DB = os.environ.get("COPILOT_TEST_DB", "copilot_test")
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(_ROOT / "backend"), str(_ROOT)]
-
-TEST_DB = os.environ.get("COPILOT_TEST_DB", "copilot_test")
 
 os.environ["POSTGRES_DB"] = TEST_DB
 os.environ.setdefault("APP_ENV", "test")

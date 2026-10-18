@@ -13,10 +13,11 @@ from tests.backend import story_books
 
 from app import actions
 from app.analytics import rules
+from app.config import get_settings
 from app.copilot import insights
 from app.db import tenant_session
 from app.demo import story
-from app.models import Action, AICall, Business, Counterparty, Recommendation
+from app.models import Action, AICall, Business, Counterparty, Recommendation, Reminder
 from app.pipeline import counterparties
 from app.privacy.redact import mask, store_value, value_fingerprint
 
@@ -53,6 +54,11 @@ def _email_on_record(db, bid, cp, address: str, when=None):
 # ── The rules find exactly the story's patterns ────────────────────────────
 
 
+def _overdue_customers(s) -> set:
+    """Customers with an invoice past its due date and unpaid in the story: each gets a reminder."""
+    return {i.customer for i in s.invoices if not i.paid_on and i.due < TODAY}
+
+
 def test_story_patterns_are_found_and_nothing_else(books):
     found = {(f.kind, name) for f, name in _findings(books["id"])}
     assert found == {
@@ -61,7 +67,9 @@ def test_story_patterns_are_found_and_nothing_else(books):
         ("spending_creep", "CloudDesk Software Ltd"),  # the subscription creeping up
         ("spending_creep", "BrightSpark Energy Ltd"),  # the energy bill rises every month too
         ("customer_concentration", "Station Coffee Co"),
-    }
+        ("payment_costs", "Amsterdam Bakehouse BV"),  # its international transfers arrive short
+    } | {("chase_overdue", c) for c in _overdue_customers(books["story"])}
+    assert "Amsterdam Bakehouse BV" in _overdue_customers(books["story"])
 
 
 def test_flour_price_rise_is_18_percent(books):
@@ -89,7 +97,10 @@ def test_slow_payer_matches_the_story(books):
     assert terms["Bright Cafe"] == 14 and f.facts["payment terms"] == "14 days"
     overdue = sum(i.total for i in s.invoices if i.customer == "Bright Cafe" and not i.paid_on and i.due < TODAY)
     assert f.facts.get("of which overdue") == (f"£{overdue / 100:,.2f}" if overdue else None)
-    assert f.next_step["action"] == ("send_payment_reminder" if overdue else None)
+    # The overdue invoices are chased by the staged reminder, never from this card as well
+    assert f.next_step["action"] is None
+    chase = [c for c, name in _findings(books["id"]) if c.kind == "chase_overdue" and name == "Bright Cafe"]
+    assert [(c.next_step["stage"], c.money_at_stake_minor) for c in chase] == ([(1, overdue)] if overdue else [])
 
 
 def test_reliance_on_one_customer_is_station_coffee(books):
@@ -170,7 +181,7 @@ def test_a_changed_email_on_an_approved_bill_is_raised(supplier):
 # ── The agent: words, fact check, repeats, mutes ──────────────────────────
 
 
-def _run(bid, fake_ai, writer=honest_writer, n=10):
+def _run(bid, fake_ai, writer=honest_writer, n=30):
     fake_ai.push(*[writer] * n)
     return insights.run(bid, TODAY)
 
@@ -182,7 +193,7 @@ def _recs(bid):
 
 def test_run_saves_ai_words_with_names_put_back(books, fake_ai):
     out = _run(books["id"], fake_ai)
-    assert out["new"] == 5
+    assert out["new"] == len(_findings(books["id"]))
     recs = _recs(books["id"])
     acme = recs[next(fp for fp in recs if fp.startswith("price:"))]
     assert acme.ai_written and "Acme Supplies Ltd" in acme.title  # the placeholder was put back
@@ -194,7 +205,7 @@ def test_run_saves_ai_words_with_names_put_back(books, fake_ai):
 def test_second_run_shows_nothing_twice(books, fake_ai):
     before = {fp: r.updated_at for fp, r in _recs(books["id"]).items()}
     out = _run(books["id"], fake_ai)
-    assert out["new"] == 0 and out["updated"] == 0 and out["kept"] == 5
+    assert out["new"] == 0 and out["updated"] == 0 and out["kept"] == len(_findings(books["id"]))
     assert fake_ai.calls == []  # unchanged findings are not worded again
     assert {fp: r.updated_at for fp, r in _recs(books["id"]).items()} == before
 
@@ -206,8 +217,8 @@ def test_wrong_figure_is_rejected_then_the_template_is_used(businesses, fake_ai)
     def liar(data_text):
         return {"title": "Acme up 99%", "body": "Prices rose by £1,234.56."}
 
-    out = _run(bid, fake_ai, writer=liar, n=20)
-    assert out["new"] == 5
+    out = _run(bid, fake_ai, writer=liar, n=60)
+    assert out["new"] == len(_findings(bid))
     for r in _recs(bid).values():
         assert not r.ai_written and r.facts["fact_check"]  # what was wrong is kept
         assert "99%" not in r.title and "1,234.56" not in r.body
@@ -220,7 +231,7 @@ def test_paused_ai_uses_the_template_without_calling_it(businesses, fake_ai):
     with tenant_session(bid) as db:
         db.get(Business, bid).ai_paused = True
     out = _run(bid, fake_ai, n=0)
-    assert out["new"] == 5 and fake_ai.calls == []
+    assert out["new"] == len(_findings(bid)) and fake_ai.calls == []
     assert not any(r.ai_written for r in _recs(bid).values())
 
 
@@ -265,13 +276,14 @@ def test_reminder_is_drafted_approved_and_sent_to_the_address_on_record(books, f
 
     sent = []
     monkeypatch.setattr(email_out, "send", lambda to, subject, body, **kw: sent.append((to, subject, body)) or "<id@x>")
+    monkeypatch.setattr(get_settings(), "stripe_links_key", None)  # never a real payment link from a test
     with tenant_session(books["id"]) as db:
         cafe = db.execute(select(Counterparty).where(Counterparty.display_name == "Bright Cafe")).scalar_one()
         _email_on_record(db, books["id"], cafe, "hello@brightcafe.example")
-        rec = db.execute(select(Recommendation).where(Recommendation.kind == "slow_payer")).scalar_one()
-        rec.status = "new"  # dismissed by an earlier test
-        overdue = bool(rec.next_step.get("action"))
-    if not overdue:
+        rec = db.execute(select(Recommendation).where(Recommendation.kind == "chase_overdue",
+                                                      Recommendation.counterparty_id == cafe.id)).scalar_one_or_none()
+        chased = rec.next_step["record_ids"] if rec else []
+    if not rec:
         pytest.skip("Bright Cafe has nothing overdue today")
     fake_ai.push(lambda d: {"title": "Payment reminder", "body": f"Hello {PLACEHOLDER.findall(d)[0]}, "
                             "could you let us know when we can expect payment? Thank you."})
@@ -286,6 +298,9 @@ def test_reminder_is_drafted_approved_and_sent_to_the_address_on_record(books, f
     assert sent and sent[0][0] == "hello@brightcafe.example" and "[" not in sent[0][2]
     with tenant_session(books["id"]) as db:
         assert db.get(Recommendation, rec.id).status == "done"
+        # Reminder 1 of 3 is recorded for each invoice it chased
+        assert {(str(r.record_id), r.stage) for r in db.execute(select(Reminder)).scalars()} == {
+            (i, 1) for i in chased}
 
 
 def test_checking_changed_details_writes_to_the_old_address(supplier, fake_ai, sign_in, monkeypatch):

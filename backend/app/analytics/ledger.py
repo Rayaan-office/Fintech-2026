@@ -59,11 +59,45 @@ def cash(db: Session) -> dict:
 
 
 def open_items(db: Session, kind: str) -> tuple[list[Record], list[Record]]:
-    """Unpaid invoices or bills: (in the business currency, in other currencies)."""
+    """Unpaid invoices or bills: (in the business currency, in other currencies).
+    An invoice whose only balance is what arrived short is not unpaid (see short_paid)."""
     biz = business(db)
     rows = db.execute(select(Record).where(Record.kind == kind, Record.status == "open",
                                            Record.open_minor > 0)).scalars().all()
+    if kind == "invoice":
+        short = short_paid(db)
+        rows = [r for r in rows if r.id not in short]
     return [r for r in rows if r.currency == biz.currency], [r for r in rows if r.currency != biz.currency]
+
+
+@dataclass
+class Short:
+    record: Record
+    short_minor: int  # what arrived short, over all its payments
+    paid_on: date  # the day the (last) payment arrived
+
+
+def short_paid(db: Session) -> dict:
+    """Invoices paid except for a small amount that arrived short (a bank charge on the way):
+    invoice id -> Short. What is left (open_minor) is not owed and is never chased; recording it
+    as a bank charge closes the invoice. Includes invoices already closed that way."""
+    rows = db.execute(select(Match.left_id, Match.signals, Record.date).join(Record, Record.id == Match.right_id)
+                      .where(Match.status == "accepted", Match.signals.has_key("short_minor"))).all()
+    by: dict = {}
+    for left, signals, on in rows:
+        short, last = by.get(left, (0, on))
+        by[left] = (short + int(signals.get("short_minor") or 0), max(last, on))
+    if not by:
+        return {}
+    invoices = db.execute(select(Record).where(Record.id.in_(by), Record.kind == "invoice",
+                                               Record.status != "void")).scalars()
+    return {r.id: Short(r, *by[r.id]) for r in invoices if (r.open_minor or 0) <= by[r.id][0]}
+
+
+def settled_short(db: Session) -> list[tuple[Record, date]]:
+    """Invoices still open only because a payment arrived short, with the day it arrived. For how
+    long customers take to pay, these were paid that day."""
+    return [(x.record, x.paid_on) for x in short_paid(db).values() if x.record.status != "paid"]
 
 
 def names(db: Session) -> dict:

@@ -45,6 +45,7 @@ const ACTION_LABELS: Record<string, string> = {
   share_lender_pack: "share a lender pack",
   change_supplier_bank: "change supplier bank details",
   large_payment: "a large or first-time payment",
+  record_bank_charge: "record a bank charge",
 };
 
 const PROVIDERS: Record<string, string> = { mailpit: "Email inbox", stripe: "Payment platform", plaid: "Bank account", quickbooks: "Accounting software" };

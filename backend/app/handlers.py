@@ -7,8 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import actions, archive, events
-from .analytics import matching
+from .analytics import ledger, matching
 from .connectors import quickbooks
+from .connectors.common import upsert_record
+from .copilot import reminders
 from .models import Action, Business, Connection, Counterparty, Document, Match, Recommendation, Record
 from .pipeline import counterparties, extract
 from .security import audit
@@ -162,16 +164,20 @@ def _send_email(db: Session, action: Action, actor: str) -> dict:
     if not inbox:
         raise actions.HTTPException(409, "Connect the email inbox first.")
     biz = db.get(Business, action.business_id)
+    body, links = p["body"], None
+    if action.type == "send_payment_reminder" and p.get("stage"):
+        body, links = reminders.before_send(db, action)  # payment links are made now, never before approval
     try:
-        message_id = email_out.send(to, p["subject"], p["body"], from_address=inbox, from_name=biz.name)  # last step
+        message_id = email_out.send(to, p["subject"], body, from_address=inbox, from_name=biz.name)  # last step
     except email_out.SendRefused as e:
         raise actions.HTTPException(409, str(e))
+    staged = reminders.after_send(db, action, links) if links is not None else {}
     events.publish(action.business_id, "email_sent", {"action_id": str(action.id)})
     if p.get("recommendation_id"):
         rec = db.get(Recommendation, UUID(p["recommendation_id"]))
         if rec and rec.status == "new":
             rec.status = "done"
-    return {"sent_to": contact.get("display"), "message_id": message_id}
+    return {"sent_to": contact.get("display"), "message_id": message_id, **staged}
 
 
 for _type in EMAIL_TO:
@@ -294,3 +300,49 @@ def _accounting_connected(db: Session) -> bool:
 
 def record_audit(db: Session, business_id, actor: str, event: str, **details) -> None:
     audit.record(db, business_id, actor, event, details=details)
+
+
+# ── Getting paid ───────────────────────────────────────────────────────────
+
+
+def _record_bank_charge(db: Session, action: Action, actor: str) -> dict:
+    """Close what is left on invoices whose payment arrived short: a bank charge (a cost of ours),
+    recorded on the day the payment arrived, and the invoice is paid from that day."""
+    short = ledger.short_paid(db)
+    done = []
+    for rid in action.payload["record_ids"]:
+        x = short.get(UUID(rid))
+        if not x or x.record.status != "open" or x.record.open_minor <= 0:
+            continue
+        inv = x.record
+        fee, _ = upsert_record(
+            db, action.business_id, "manual", f"bank_charge:{inv.id}", kind="fee", direction="out",
+            amount_minor=inv.open_minor, open_minor=0, currency=inv.currency, date=x.paid_on, status="posted",
+            counterparty_id=inv.counterparty_id, reference=inv.reference, category="bank_charges",
+            description=f"Bank charge: payment for {inv.reference or 'an invoice'} arrived short"[:500],
+            external={"invoice": str(inv.id), "action": str(action.id)})
+        done.append({"invoice_id": str(inv.id), "fee_id": str(fee.id), "amount_minor": inv.open_minor})
+        matching.settle(db, inv, inv.open_minor, x.paid_on)
+    if not done:
+        raise actions.HTTPException(409, "There is nothing short left to record on these invoices.")
+    if action.payload.get("recommendation_id"):
+        rec = db.get(Recommendation, UUID(action.payload["recommendation_id"]))
+        if rec and rec.status == "new":
+            rec.status = "done"
+    from .copilot import insights  # the invoices are paid now: check the recommendations again
+
+    insights.refresh_after_commit(db, action.business_id)
+    return {"charges": done, "amount_minor": sum(d["amount_minor"] for d in done)}
+
+
+def _undo_bank_charge(db: Session, action: Action, actor: str) -> dict:
+    for d in (action.result or {}).get("charges", []):
+        db.get(Record, UUID(d["fee_id"])).status = "void"
+        inv = db.get(Record, UUID(d["invoice_id"]))
+        inv.open_minor = min(inv.amount_minor, (inv.open_minor or 0) + d["amount_minor"])
+        inv.status = "open"
+        inv.paid_date = None
+    return {}
+
+
+actions.handler("record_bank_charge", undo=_undo_bank_charge)(_record_bank_charge)

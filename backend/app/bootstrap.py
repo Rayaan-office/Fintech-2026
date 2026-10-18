@@ -38,6 +38,8 @@ MIGRATIONS = [
     "ALTER TABLE corrections ADD COLUMN IF NOT EXISTS counterparty_id uuid",
     "ALTER TABLE corrections ADD COLUMN IF NOT EXISTS forgotten_at timestamptz",
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS learned jsonb NOT NULL DEFAULT '{}'",
+    # Getting paid
+    "ALTER TABLE records ADD COLUMN IF NOT EXISTS method varchar(30)",
 ]
 
 

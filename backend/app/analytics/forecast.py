@@ -93,9 +93,11 @@ def lateness(db: Session, today: date) -> dict:
     rows = db.execute(select(Record).where(Record.kind == "invoice", Record.status == "paid",
                                            Record.paid_date.is_not(None),
                                            Record.date >= today - timedelta(days=365))).scalars().all()
+    paid = [(r, r.paid_date) for r in rows] + [(r, on) for r, on in ledger.settled_short(db)
+                                                if r.date >= today - timedelta(days=365)]
     days: dict = defaultdict(list)
-    for r in rows:
-        days[r.counterparty_id].append((r.paid_date - ledger.due(r, terms)).days)
+    for r, on in paid:
+        days[r.counterparty_id].append((on - ledger.due(r, terms)).days)
     out = {cp: (statistics.fmean(v), statistics.pstdev(v) if len(v) > 1 else 3.0, len(v)) for cp, v in days.items()}
     every = [x for v in days.values() for x in v]
     out[None] = (statistics.fmean(every), statistics.pstdev(every) if len(every) > 1 else 3.0, len(every)) \

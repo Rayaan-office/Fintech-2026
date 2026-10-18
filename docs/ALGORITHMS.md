@@ -132,7 +132,7 @@ An AI agent reviews the business's own records whenever new data arrives and onc
 |---|---|---|
 | Supplier details changed | The address, email, phone or bank details on a new bill (approved or still waiting) differ from the supplier's record. We keep every past version, so we can show before and after. The same address read slightly differently is not a change. All the changes on one bill are one finding; bills sharing the same new bank details are one finding. | Confirm with the supplier using the contact details already on record. Bank-detail changes also raise a fraud warning (section 11). |
 | Supplier price rise | The supplier's latest two bills (the latest, for a monthly supplier) are 10% or more above its usual level (the median of the 3 months before), or a price per unit on a bill is 10% or more above that line's usual price. Where past bills show only line totals, the usual unit price is the largest price that most past totals are whole multiples of (8 bags at £45.00 is £360.00). A charge that rises step by step every month is spending creep instead. | Draft an email asking about the increase, or compare with other suppliers |
-| Slow-paying customer | Across at least 3 invoices, a customer pays 7 or more days after the due date on average, or their invoices of the last 60 days are paid 7 or more days late and 3 or more days later than before | Ask for a deposit or payment upfront, shorten payment terms, offer an early-payment discount, or send a reminder before the due date (a reminder is drafted when invoices are overdue) |
+| Slow-paying customer | Across at least 3 invoices, a customer pays 7 or more days after the due date on average, or their invoices of the last 60 days are paid 7 or more days late and 3 or more days later than before | Ask for a deposit or payment upfront, shorten payment terms, offer an early-payment discount, or send a reminder before the due date (overdue invoices are chased by the reminders in section 13) |
 | Spending creep | A spending category rose in each of the last 3 full months, by 10% or more and at least £10 a month in all, or a new supplier has billed about once a month for the last 100 days | Review the cost |
 | Reliance on one customer | One customer brought in more than 30% of sales over the last 90 days | For information |
 
@@ -271,3 +271,65 @@ The "What we've learned" page explains in plain words what was learned for each 
 | Time saved | Values filled in and kept on approved documents, times 30 seconds each. We assume that is how long finding a value on the document and typing it in takes. |
 | Top recommendation acted on | How often the recommendation first in the list was acted on rather than turned down |
 | Recommendations acted on | The same for every recommendation |
+
+## 14. Getting paid faster and for less
+
+We look at how each customer pays, spot payments that arrive short or slowly, and chase overdue invoices in three steps. Fixed rules find everything below. The AI only words the recommendations and the reminder emails, from the facts, with names as placeholders, and is fact-checked as in section 9.
+
+### How we tell how a payment was made
+
+| Way of paying | How we recognise it |
+|---|---|
+| Card | A card payment through the payment platform, which also tells us the card's country, or a payout of card sales from the platform |
+| International transfer | A bank payment in a currency other than the account's, or whose text says SWIFT, INTL, international, FX, foreign, SEPA, IBAN, BIC or TT |
+| Cash | A bank line that says cash or counter credit |
+| Bank transfer | Any other bank payment: Faster Payments, BACS, standing orders |
+| Not known | Nothing to go on |
+
+The bank's own payment channel helps too: a payment made "in store" is a card payment. A payment-platform payment by bank debit counts as a bank transfer. Words are matched whole, so "fx" inside a company name doesn't count. Records saved before we kept the method get it from their text in the same way.
+
+### Payments that arrive short, and bank charges
+
+- When matching (section 3) settles an invoice with a payment a little below it, we record how much arrived short. "A little" is the usual fee allowance of 3% + 50p. For an international transfer we allow up to £30, but never more than 10% of the invoice, because the banks on the way usually take a fixed charge rather than a percentage. Before this, a £400 invoice paid by international transfer with £18.60 taken on the way was never matched.
+- What is left on the invoice is not money the customer owes. We never chase it in a reminder, and we leave it out of who owes you, the cash forecast and the lender pack. Who owes you shows it separately, as short paid.
+- When we work out how long customers take to pay (slow payers, payment habits in the forecast, days to get paid), such an invoice counts as paid on the day its payment arrived.
+- Recording a bank charge closes it. A finance manager or business owner approves it, and as a small change it can be undone. We add a bank charge for what is left, dated the day the payment arrived, and the invoice is paid from that day.
+
+### What a payment costs
+
+For each customer, over the last 180 days, we compare each way of paying: how many payments, the total that arrived short, the average days from invoice to payment, and what the same payments would have cost by card.
+
+- **The card fee** is the business's own: its card fees divided by its card payments over the same 180 days, once it has at least 3 card payments. Until then we use a typical rate: 1.5% + 20p for a UK card, and 3.25% + 20p for a customer who pays from abroad. These rates are assumptions, and we say so wherever we use them.
+- **When we raise it:** payments arrived £10 or more short over at least 2 payments, or the customer's way of paying takes 5 or more days longer than card. For card we use the customer's own card payments, or else the business's once it has at least 3.
+- **The saving** is what arrived short minus what card would have cost for all of that customer's payments made that way, so it is never flattered.
+- **Next steps:** record what is left as bank charges, and send a card payment link with the next reminder.
+
+### Reminders in three steps
+
+| Step | Tone | When it is due | Who approves |
+|---|---|---|---|
+| 1 | Friendly | The day after an invoice falls overdue | Anyone who can send reminders |
+| 2 | Firm | 7 days after reminder 1 | Anyone who can send reminders |
+| 3 | Final notice | 14 days after reminder 2 | A business owner only |
+
+- One reminder per customer at a time, covering every overdue invoice that is due the same step. After the final notice we stop; the slow-payer recommendation and business health keep showing the debt.
+- We never chase what is left after a payment arrived short, or an invoice whose likely payment is waiting for a person to confirm the match.
+- The AI words each step's email from the facts and is fact-checked, with our own template as the fallback, and the email waits for approval. When it is sent, we record the step for each invoice it covered. A step already sent for an invoice is never sent again.
+- The slow-payer recommendation no longer drafts reminders, so a customer is never chased from two places.
+
+### Payment link
+
+- We make a card payment link only while an approved reminder is being sent, never for a draft. The approver is told beforehand whether one will be added.
+- It needs a separate restricted test key from the payment platform, with write access to products, prices and payment links only. Any other key, such as a full-access key or a live one, is ignored: the reminder then goes without a link, and the page says why.
+- Each invoice gets one link for what is still owed, reused by later reminders while the amount stays the same. Every request carries an idempotency key, so a retry returns the same link rather than a second one.
+- An invoice raised on the payment platform uses the platform's own page for paying it.
+- Only an address on the platform's own payment pages goes into an email. If making the link fails, nothing is sent and the approval is not used up.
+- Without a key, the reminder goes without a link and the reminder card says how to add one.
+
+### The numbers we show
+
+Over the last 180 days:
+- the money lost to payments that arrived short, and how much of it is still to record as bank charges;
+- what could be saved, after card fees, if the customers whose payments arrive short paid by card;
+- how many days sooner card payments arrive than bank transfers, once there are at least 3 card payments;
+- for each invoice paid, the reminder step it had reached when it was paid.
