@@ -27,29 +27,41 @@ export function TopBar({ onSearch, onShortcuts }: { onSearch: () => void; onShor
   const privacy = usePrivacy();
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur sm:px-6">
-      <span className="truncate text-sm font-semibold md:hidden">{me.business.name}</span>
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+      <span className="flex min-w-0 items-center gap-2 md:hidden">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-[13px] font-semibold text-background" aria-hidden>
+          {me.business.name.trim()[0]?.toUpperCase() ?? "S"}
+        </span>
+        <span className="truncate text-sm font-semibold">{me.business.name}</span>
+      </span>
       <button
         type="button"
         onClick={onSearch}
-        className="ml-auto flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-sm text-muted-foreground shadow-card hover:bg-accent md:ml-0 md:w-full md:max-w-sm"
+        className="group ml-auto flex size-9 shrink-0 items-center md:min-w-0 md:shrink justify-center gap-2.5 rounded-full text-sm text-muted-foreground transition-colors hover:bg-accent md:ml-0 md:h-10 md:w-full md:max-w-xl md:justify-start md:bg-secondary md:px-4 md:hover:bg-accent"
         aria-label="Search everything"
       >
-        <SearchIcon className="size-4" aria-hidden />
-        <span className="hidden flex-1 text-left md:inline">Search everything</span>
-        <span className="hidden gap-0.5 md:flex" aria-hidden>
-          <Kbd>{keyLabel("mod")}</Kbd>
-          <Kbd>K</Kbd>
+        <SearchIcon className="size-4 shrink-0" aria-hidden />
+        <span className="hidden flex-1 truncate text-left md:inline">Search everything</span>
+        <span className="hidden items-center gap-0.5 md:flex" aria-hidden>
+          <Kbd className="bg-card">{keyLabel("mod")}</Kbd>
+          <Kbd className="bg-card">K</Kbd>
         </span>
       </button>
-      <div className="flex items-center gap-1 md:ml-auto">
+      <div className="flex shrink-0 items-center gap-0.5 md:ml-auto">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={privacy.toggle} aria-pressed={privacy.hidden} aria-label={privacy.hidden ? "Show amounts" : "Hide amounts"}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground aria-pressed:text-foreground"
+              onClick={privacy.toggle}
+              aria-pressed={privacy.hidden}
+              aria-label={privacy.hidden ? "Show amounts" : "Hide amounts"}
+            >
               {privacy.hidden ? <EyeOffIcon aria-hidden /> : <EyeIcon aria-hidden />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{privacy.hidden ? "Amounts are hidden. Click to show." : "Hide all amounts (privacy mode)"}</TooltipContent>
+          <TooltipContent>{privacy.hidden ? "Show amounts" : "Hide amounts"}</TooltipContent>
         </Tooltip>
         <NotificationsButton unread={me.unread_notifications} />
         <UserMenu onShortcuts={onShortcuts} />
@@ -67,9 +79,9 @@ function NotificationsButton({ unread }: { unread: number }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
+        <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
           <BellIcon aria-hidden />
-          {unread > 0 && <span className="absolute right-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background" aria-hidden />}
+          {unread > 0 && <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-primary ring-2 ring-background" aria-hidden />}
         </Button>
       </PopoverTrigger>
       <PopoverContent>
@@ -121,7 +133,7 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="ml-1 rounded-full" aria-label={`Account menu for ${me.user.name}`}>
+        <button type="button" className="ml-1.5 rounded-full outline-offset-2 transition-opacity hover:opacity-90" aria-label={`Account menu for ${me.user.name}`}>
           <Initials name={me.user.name} />
         </button>
       </DropdownMenuTrigger>
@@ -129,9 +141,7 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
         <DropdownMenuLabel>
           <div className="font-medium">{me.user.name}</div>
           <div className="truncate text-xs font-normal text-muted-foreground">{me.user.email}</div>
-          <div className="mt-1 text-xs font-normal text-muted-foreground">
-            {rolesText(me.user.roles)} · {me.business.name}
-          </div>
+          <div className="mt-1 text-xs font-normal text-muted-foreground">{rolesText(me.user.roles)}</div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate("/settings")}>

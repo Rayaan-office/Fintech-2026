@@ -1,22 +1,24 @@
-import { ChartColumnIcon, CircleCheckIcon, TriangleAlertIcon } from "lucide-react";
+import { ChartColumnIcon, CircleCheckIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useCurrentUser } from "@/api/auth";
-import { useBusinessHealth } from "@/api/hooks";
+import { useBusinessHealth, useCashFlow } from "@/api/hooks";
 import type { BusinessHealth, HealthCheck } from "@/api/types";
-import { ChartCard, type ChartTable } from "@/components/ChartCard";
-import { CategoryBarChart } from "@/components/charts";
-import { HelpHint, type MoneyTerm } from "@/components/HelpHint";
+import { ChartCard } from "@/components/ChartCard";
+import { AgeingBar } from "@/components/health/AgeingBar";
+import { HealthStats } from "@/components/health/HealthStats";
+import { ProfitChart } from "@/components/health/ProfitChart";
+import { Initials } from "@/components/Initials";
+import { Disclosure, Donut, InfoPopover, Section, ShareBars, StatStrip, Surface } from "@/components/kit";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView } from "@/components/QueryView";
 import { CardsSkeleton, ChartSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/states";
+import { StatusDot, type Status } from "@/components/StatusDot";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { WhyHint } from "@/components/WhyHint";
 import { formatPercent } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 const VIEWS = { pnl: "Profit", spending: "Spending", suppliers: "Suppliers", owed: "Who owes you" } as const;
 type View = keyof typeof VIEWS;
@@ -41,12 +43,12 @@ export default function HealthPage() {
     />
   );
   return (
-    <div className="grid grid-cols-1 gap-6">
-      <PageHeader title="Business health" description="How the business is really doing, in plain numbers." />
+    <div className="grid grid-cols-1 gap-8">
+      <PageHeader title="Business health" />
       <QueryView
         query={health}
         loading={
-          <div className="grid gap-6" aria-busy="true">
+          <div className="grid gap-8" aria-busy="true">
             <CardsSkeleton count={4} />
             <ChartSkeleton height={280} />
           </div>
@@ -58,9 +60,6 @@ export default function HealthPage() {
     </div>
   );
 }
-
-/** "Apr 2026 (part)" → "Apr", for the chart's axis; the table keeps the full label. */
-const shortMonth = (label: string) => label.split(" ")[0] ?? label;
 
 function HealthContent({ data }: { data: BusinessHealth }) {
   const currency = useCurrentUser().business.currency;
@@ -75,15 +74,58 @@ function HealthContent({ data }: { data: BusinessHealth }) {
       },
       { replace: true },
     );
-  const money = (minor: number) => <Money minor={minor} currency={currency} />;
-  const months = data.profit_and_loss.map((m) => ({ ...m, short: shortMonth(m.label) }));
 
-  const charts: Record<View, { title: string; summary: string; chart: ReactNode; table: ChartTable; none?: string }> = {
-    pnl: {
-      title: "Profit by month",
-      summary: "Profit for each month: sales minus costs, before VAT.",
-      chart: <CategoryBarChart data={months} categoryKey="short" valueKey="profit_minor" currency={currency} />,
-      table: {
+  return (
+    <>
+      <HealthStats data={data} currency={currency} />
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid min-w-0 grid-cols-1 content-start gap-3">
+          <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+            <TabsList aria-label="Choose a chart" className="max-w-full justify-start overflow-x-auto [scrollbar-width:none]">
+              {(Object.keys(VIEWS) as View[]).map((v) => (
+                <TabsTrigger key={v} value={v}>
+                  {VIEWS[v]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          {view === "pnl" && <ProfitView data={data} currency={currency} />}
+          {view === "spending" && <SpendingView data={data} currency={currency} />}
+          {view === "suppliers" && <SuppliersView data={data} currency={currency} />}
+          {view === "owed" && <OwedView data={data} currency={currency} />}
+        </div>
+        <HealthChecks checks={data.checks} />
+      </div>
+    </>
+  );
+}
+
+/** A view's bordered surface with its heading, the same shape as a chart card. */
+function ViewSurface({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
+  return (
+    <Surface>
+      <section aria-label={title}>
+        <header className="flex flex-wrap items-baseline gap-2 px-5 pt-4">
+          <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
+          {aside && <span className="text-sm text-muted-foreground">{aside}</span>}
+        </header>
+        <div className="px-5 pb-5 pt-4">{children}</div>
+      </section>
+    </Surface>
+  );
+}
+
+const None = ({ children }: { children: ReactNode }) => <p className="py-10 text-center text-sm text-muted-foreground">{children}</p>;
+
+function ProfitView({ data, currency }: { data: BusinessHealth; currency: string }) {
+  const money = (minor: number) => <Money minor={minor} currency={currency} />;
+  const months = data.profit_and_loss;
+  return (
+    <ChartCard
+      title="Profit by month"
+      summary="Profit for each month: sales minus costs, before VAT."
+      table={{
         columns: [
           { key: "month", label: "Month" },
           { key: "sales", label: "Sales", numeric: true },
@@ -99,153 +141,146 @@ function HealthContent({ data }: { data: BusinessHealth }) {
           profit: money(r.profit_minor),
           margin: r.margin_pct === null ? "–" : formatPercent(r.margin_pct),
         })),
-      },
-    },
-    spending: {
-      title: "Where the money goes",
-      summary: "Spending by category over the last 90 days, before VAT.",
-      chart: <CategoryBarChart data={data.spending} categoryKey="category" valueKey="amount_minor" currency={currency} horizontal />,
-      table: {
-        columns: [
-          { key: "category", label: "Category" },
-          { key: "amount", label: "Spent", numeric: true },
-        ],
-        rows: data.spending.map((r) => ({ id: r.category, category: r.category, amount: money(r.amount_minor) })),
-      },
-      none: data.spending.length === 0 ? "No spending in the last 90 days." : undefined,
-    },
-    suppliers: {
-      title: "Biggest suppliers",
-      summary: "The ten suppliers you spent most with over the last 90 days, before VAT.",
-      chart: <CategoryBarChart data={data.top_suppliers} categoryKey="name" valueKey="amount_minor" currency={currency} horizontal />,
-      table: {
-        columns: [
-          { key: "name", label: "Supplier" },
-          { key: "amount", label: "Spent", numeric: true },
-        ],
-        rows: data.top_suppliers.map((r) => ({ id: r.name, name: r.name, amount: money(r.amount_minor) })),
-      },
-      none: data.top_suppliers.length === 0 ? "No supplier spending in the last 90 days." : undefined,
-    },
-    owed: {
-      title: "Who owes you, by how overdue",
-      summary: "Unpaid invoices grouped by how overdue they are.",
-      chart: <CategoryBarChart data={data.who_owes_you} categoryKey="bucket" valueKey="amount_minor" currency={currency} horizontal />,
-      table: {
-        columns: [
-          { key: "bucket", label: "How overdue" },
-          { key: "amount", label: "Owed", numeric: true },
-        ],
-        rows: data.who_owes_you.map((r) => ({ id: r.bucket, bucket: r.bucket, amount: money(r.amount_minor) })),
-      },
-      none: data.owed.count === 0 ? "No unpaid invoices. Nobody owes you anything right now." : undefined,
-    },
-  };
-  const current = charts[view];
+      }}
+    >
+      <ProfitChart months={months} currency={currency} />
+    </ChartCard>
+  );
+}
 
+function SpendingView({ data, currency }: { data: BusinessHealth; currency: string }) {
+  const total = data.spending.reduce((s, r) => s + r.amount_minor, 0);
   return (
-    <>
-      <HeadlineNumbers data={data} currency={currency} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-        <div className="grid min-w-0 content-start gap-3">
-          <Tabs value={view} onValueChange={(v) => setView(v as View)}>
-            <TabsList aria-label="Choose a chart" className="max-w-full justify-start overflow-x-auto">
-              {(Object.keys(VIEWS) as View[]).map((v) => (
-                <TabsTrigger key={v} value={v}>
-                  {VIEWS[v]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <ChartCard key={view} title={current.title} summary={current.summary} table={current.table}>
-            {current.none ? <p className="px-3 py-10 text-center text-sm text-muted-foreground">{current.none}</p> : current.chart}
-          </ChartCard>
-          {view === "owed" && data.owed.count > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {money(data.owed.total_minor)} across {data.owed.count} unpaid {data.owed.count === 1 ? "invoice" : "invoices"}, {money(data.owed.overdue_minor)} of it overdue.
-              {data.owed.other_currencies > 0 && ` ${data.owed.other_currencies} more in other currencies aren't included.`}
-            </p>
+    <ViewSurface title="Where the money goes" aside="last 90 days">
+      {data.spending.length === 0 ? (
+        <None>No spending in the last 90 days.</None>
+      ) : (
+        <div className="grid gap-5">
+          <Donut
+            slices={data.spending.map((s) => ({ id: s.category, label: s.category, minor: s.amount_minor }))}
+            currency={currency}
+            label="Spending by category over the last 90 days, before VAT"
+            centre={
+              <>
+                <span className="text-xs text-muted-foreground">Spent</span>
+                <Money minor={total} currency={currency} className="text-sm font-semibold" />
+              </>
+            }
+          />
+          {data.spending.length > 5 && (
+            <Disclosure summary={`All ${data.spending.length} categories`}>
+              <ShareBars rows={data.spending.map((s) => ({ id: s.category, label: s.category, minor: s.amount_minor }))} currency={currency} labelHeading="Category" valueHeading="Spent" />
+            </Disclosure>
           )}
         </div>
-        <HealthChecks checks={data.checks} />
-      </div>
-    </>
+      )}
+    </ViewSurface>
   );
 }
 
-function HeadlineNumbers({ data, currency }: { data: BusinessHealth; currency: string }) {
-  const money = (minor: number, direction: "auto" | "in" | "out" = "auto") => <Money minor={minor} currency={currency} direction={direction} />;
-  const full = data.period_label !== "";
-  const runway =
-    data.runway_months !== null
-      ? { value: `${data.runway_months.toFixed(1)} months`, note: <>{money(-data.monthly_net_minor)} a month more going out than coming in</> }
-      : data.monthly_net_minor > 0
-        ? { value: "Cash is growing", note: <>{money(data.monthly_net_minor, "in")} a month on average</> }
-        : { value: "–", note: "No money moved in the last 3 months" };
+function SuppliersView({ data, currency }: { data: BusinessHealth; currency: string }) {
   return (
-    <section
-      aria-label={full ? `Headline numbers, ${data.period_label}` : "Headline numbers"}
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border shadow-card sm:grid-cols-4"
-    >
-      <Stat term="Profit" value={full ? money(data.profit_minor) : "–"} note={full ? data.period_label : "We need a full month of records"} />
-      <Stat
-        term="Margin"
-        value={full && data.sales_minor !== 0 ? formatPercent(data.margin_pct) : "–"}
-        note={full && data.sales_minor !== 0 ? <>On {money(data.sales_minor)} of sales</> : "No sales in a full month yet"}
-      />
-      <Stat
-        term="Days to get paid"
-        value={data.days_to_get_paid === null ? "–" : `${Math.round(data.days_to_get_paid)} days`}
-        note={data.days_to_get_paid === null ? "No invoices paid in the last 90 days" : "Invoice to payment, last 90 days"}
-      />
-      <Stat term="Runway" value={runway.value} note={runway.note} />
-    </section>
+    <ViewSurface title="Biggest suppliers" aside="last 90 days">
+      {data.top_suppliers.length === 0 ? (
+        <None>No supplier spending in the last 90 days.</None>
+      ) : (
+        <ShareBars
+          rows={data.top_suppliers.map((s) => ({ id: s.name, label: s.name, leading: <Initials name={s.name} size="sm" />, minor: s.amount_minor }))}
+          currency={currency}
+          labelHeading="Supplier"
+          valueHeading="Spent"
+          limit={5}
+        />
+      )}
+    </ViewSurface>
   );
 }
 
-function Stat({ term, value, note }: { term: MoneyTerm; value: ReactNode; note?: ReactNode }) {
+/** "Corner Deli invoice INV-2077" → "Corner Deli": the forecast names each unpaid invoice this way. */
+const customerOf = (label: string) => label.replace(/\s+invoice(\s+\S+)?$/i, "").trim() || label;
+
+function OwedView({ data, currency }: { data: BusinessHealth; currency: string }) {
+  const o = data.owed;
+  if (o.count === 0) {
+    return (
+      <ViewSurface title="Unpaid invoices">
+        <None>No unpaid invoices. Nobody owes you anything right now.</None>
+      </ViewSurface>
+    );
+  }
   return (
-    <div className="min-w-0 bg-card p-4 sm:p-5">
-      <div className="text-sm text-muted-foreground">
-        <HelpHint term={term} />
+    <ViewSurface title="Unpaid invoices" aside="by how overdue">
+      <div className="grid gap-6">
+        <StatStrip
+          items={[
+            { label: "Owed", value: <Money minor={o.total_minor} currency={currency} />, note: `${o.count} ${o.count === 1 ? "invoice" : "invoices"}` },
+            { label: "Overdue", value: <Money minor={o.overdue_minor} currency={currency} />, tone: o.overdue_minor > 0 ? "warning" : "default", note: `${Math.round(o.over_30_share * 100)}% over 30 days` },
+          ]}
+        />
+        <AgeingBar buckets={data.who_owes_you} currency={currency} />
+        <ByCustomer currency={currency} />
+        {o.other_currencies > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {o.other_currencies} more in other currencies {o.other_currencies === 1 ? "isn't" : "aren't"} included.
+          </p>
+        )}
       </div>
-      <div className="mt-1.5 truncate text-xl font-semibold tracking-tight tabular sm:text-2xl">{value}</div>
-      {note && <div className="mt-0.5 text-xs text-muted-foreground">{note}</div>}
-    </div>
+    </ViewSurface>
   );
 }
+
+/** Who owes the most, from the unpaid invoices the forecast is waiting on. */
+function ByCustomer({ currency }: { currency: string }) {
+  const flow = useCashFlow();
+  const totals = new Map<string, number>();
+  for (const it of flow.data?.items ?? []) {
+    if (it.kind !== "invoice" || it.amount_minor <= 0) continue;
+    const who = customerOf(it.label);
+    totals.set(who, (totals.get(who) ?? 0) + it.amount_minor);
+  }
+  if (totals.size === 0) return null;
+  const rows = [...totals].sort((a, b) => b[1] - a[1]).map(([name, minor]) => ({ id: name, label: name, leading: <Initials name={name} size="sm" />, minor }));
+  return <ShareBars rows={rows} currency={currency} labelHeading="Customer" valueHeading="Owed" limit={5} />;
+}
+
+const SEVERITY: Record<HealthCheck["severity"], { status: Status; label: string }> = {
+  urgent: { status: "danger", label: "Urgent" },
+  attention: { status: "warning", label: "Needs attention" },
+  info: { status: "positive", label: "Healthy" },
+};
 
 function HealthChecks({ checks }: { checks: HealthCheck[] }) {
   return (
-    <section aria-labelledby="checks-heading" className="self-start rounded-xl border bg-card shadow-card">
-      <h2 id="checks-heading" className="px-5 pt-4 text-sm font-medium">
-        Health checks
-      </h2>
+    <Section
+      title="Health checks"
+      aside={checks.length > 0 ? String(checks.length) : undefined}
+      className="content-start"
+      actions={
+        <InfoPopover label="What we check" title="What we check">
+          <p>We compare costs with sales and look at your margin, overdue invoices and runway.</p>
+        </InfoPopover>
+      }
+    >
       {checks.length === 0 ? (
-        <p className="flex items-center gap-2 px-5 pb-5 pt-3 text-sm text-muted-foreground">
-          <CircleCheckIcon className="size-4 shrink-0 text-positive" aria-hidden /> Nothing stands out right now. We check costs against sales, your margin, overdue invoices and runway.
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CircleCheckIcon className="size-4 shrink-0 text-positive" aria-hidden /> Nothing stands out right now.
         </p>
       ) : (
-        <ul className="divide-y">
-          {checks.map((c) => (
-            <li key={c.id} className="flex gap-3 px-5 py-3.5">
-              {c.severity === "info" ? (
-                <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-positive" aria-label="Healthy" />
-              ) : (
-                <TriangleAlertIcon
-                  className={cn("mt-0.5 size-4 shrink-0", c.severity === "urgent" ? "text-danger" : "text-warning")}
-                  aria-label={c.severity === "urgent" ? "Urgent" : "Needs attention"}
-                />
-              )}
-              <div className="grid min-w-0 gap-1">
-                <p className="text-sm">{c.sentence}</p>
-                <WhyHint why={c.why} />
-              </div>
-            </li>
-          ))}
+        <ul className="divide-y border-y">
+          {checks.map((c) => {
+            const s = SEVERITY[c.severity];
+            return (
+              <li key={c.id} className="flex items-start gap-3 py-3">
+                <StatusDot status={s.status} label={s.label} className="mt-1.5" />
+                <p className="min-w-0 flex-1 text-sm">{c.sentence}</p>
+                <InfoPopover label="Why am I seeing this?" title="Why you're seeing this" className="-mt-0.5 shrink-0">
+                  <p>{c.why}</p>
+                </InfoPopover>
+              </li>
+            );
+          })}
         </ul>
       )}
-    </section>
+    </Section>
   );
 }

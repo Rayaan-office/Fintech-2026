@@ -27,19 +27,24 @@ export type NavItem = {
   phone?: boolean;
   /** Only for people who can't see the full books (e.g. employees). */
   onlyWithout?: Permission;
+  /** A small label above a run of main items in the sidebar, to help scanning. */
+  group?: NavGroup;
 };
+
+export type NavGroup = "money" | "records";
+export const NAV_GROUPS: Record<NavGroup, string> = { money: "Money", records: "Records" };
 
 export const NAV: NavItem[] = [
   { to: "/", label: "Home", icon: HouseIcon, perm: "view_all", place: "main", phone: true },
   { to: "/inbox", label: "Inbox", icon: InboxIcon, perm: "view_all", place: "main", phone: true },
   { to: "/ask", label: "Ask", icon: MessageCircleIcon, perm: "use_assistant", place: "main", phone: true },
-  { to: "/cash-flow", label: "Cash flow", icon: TrendingUpIcon, perm: "view_all", place: "main", phone: true },
-  { to: "/health", label: "Business health", icon: ChartColumnIcon, perm: "view_all", place: "main" },
+  { to: "/cash-flow", label: "Cash flow", icon: TrendingUpIcon, perm: "view_all", place: "main", phone: true, group: "money" },
+  { to: "/health", label: "Business health", icon: ChartColumnIcon, perm: "view_all", place: "main", group: "money" },
   { to: "/recommendations", label: "Recommendations", icon: LightbulbIcon, perm: "view_all", place: "hidden" },
-  { to: "/financing", label: "Financing", icon: LandmarkIcon, perm: "use_financing", place: "main" },
-  { to: "/documents", label: "Documents", icon: FileTextIcon, perm: "view_all", place: "main" },
-  { to: "/activity", label: "Activity", icon: ActivityIcon, perm: "view_activity", place: "main" },
-  { to: "/my-receipts", label: "My receipts", icon: ReceiptIcon, perm: "submit_receipt", place: "main", phone: true, onlyWithout: "view_all" },
+  { to: "/financing", label: "Financing", icon: LandmarkIcon, perm: "use_financing", place: "main", group: "money" },
+  { to: "/documents", label: "Documents", icon: FileTextIcon, perm: "view_all", place: "main", group: "records" },
+  { to: "/activity", label: "Activity", icon: ActivityIcon, perm: "view_activity", place: "main", group: "records" },
+  { to: "/my-receipts", label: "My receipts", icon: ReceiptIcon, perm: "submit_receipt", place: "main", phone: true, onlyWithout: "view_all", group: "records" },
   { to: "/learning", label: "What we've learned", icon: BrainCircuitIcon, perm: "view_all", place: "bottom" },
   { to: "/connections", label: "Connections", icon: PlugIcon, perm: "view_all", place: "bottom" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, perm: null, place: "bottom", phone: true },

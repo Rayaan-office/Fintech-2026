@@ -1,6 +1,6 @@
 import { CheckIcon, CopyIcon, Loader2Icon } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useLogout, useTotpSetup, useTotpVerify } from "@/api/auth";
 import { errorMessage } from "@/api/client";
@@ -39,14 +39,20 @@ export function TwoStepPage() {
       title={setup ? "Set up two-step sign-in" : "Two-step sign-in"}
       description={
         setup
-          ? "People who can approve payments sign in with a code from an authenticator app as well as a password."
+          ? "Approvers sign in with an authenticator app code too."
           : "Enter the 6-digit code from your authenticator app."
       }
     >
       {setup && <SetupStep />}
       <form onSubmit={onSubmit} className="grid gap-4">
         <div className="grid gap-2">
-          <Label htmlFor="code">{setup ? "Then enter the 6-digit code it shows" : "Code"}</Label>
+          {setup ? (
+            <Label htmlFor="code" className="flex items-center gap-2">
+              <StepNumber n={3} /> Enter the 6-digit code
+            </Label>
+          ) : (
+            <Label htmlFor="code">Code</Label>
+          )}
           <Input
             id="code"
             inputMode="numeric"
@@ -120,16 +126,18 @@ function SetupStep() {
   };
 
   return (
-    <ol className="mb-6 grid gap-4 text-sm">
-      <li>
-        <p className="mb-3">Scan this with an authenticator app such as Google Authenticator, 1Password or Microsoft Authenticator.</p>
+    <ol className="mb-6 grid gap-5 text-sm">
+      <li className="grid gap-3">
+        <Step n={1}>Scan with your authenticator app</Step>
         <div className="flex justify-center rounded-xl border bg-white p-4">
-          <QRCodeSVG value={otpauth_uri} size={176} marginSize={0} title="QR code for your authenticator app" />
+          <QRCodeSVG value={otpauth_uri} size={168} marginSize={0} title="QR code for your authenticator app" />
         </div>
       </li>
-      <li>
-        <p className="mb-2 text-muted-foreground">Can't scan it? Enter this key instead. It's shown only once.</p>
-        <div className="flex items-center gap-2 rounded-lg border bg-muted px-3 py-2">
+      <li className="grid gap-2">
+        <Step n={2}>
+          Or type this key <span className="font-normal text-muted-foreground">(shown once)</span>
+        </Step>
+        <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-1.5">
           <code className="flex-1 break-all font-mono text-[13px]" aria-label="Setup key">
             {grouped}
           </code>
@@ -139,5 +147,22 @@ function SetupStep() {
         </div>
       </li>
     </ol>
+  );
+}
+
+function StepNumber({ n }: { n: number }) {
+  return (
+    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular" aria-hidden>
+      {n}
+    </span>
+  );
+}
+
+function Step({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <p className="flex items-center gap-2 font-medium">
+      <StepNumber n={n} />
+      <span>{children}</span>
+    </p>
   );
 }

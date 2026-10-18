@@ -26,12 +26,12 @@ export function ChartCard({
 }) {
   const [view, setView] = useState<"graph" | "table">("graph");
   return (
-    <section className={cn("rounded-xl border bg-card shadow-card", className)}>
+    <section className={cn("rounded-xl border bg-card", className)}>
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
-        <h2 className="text-sm font-medium">{title}</h2>
+        <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
         <div className="flex items-center gap-2">
           {actions}
-          <div role="group" aria-label="Chart view" className="inline-flex rounded-lg bg-muted p-0.5">
+          <div role="group" aria-label="Chart view" className="inline-flex rounded-full bg-muted p-0.5">
             <ViewButton active={view === "graph"} onClick={() => setView("graph")} label="Graph">
               <ChartAreaIcon className="size-4" aria-hidden />
             </ViewButton>
@@ -61,12 +61,12 @@ function ViewButton({ active, onClick, label, children }: { active: boolean; onC
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground",
+        "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground",
         active && "bg-card text-foreground shadow-card",
       )}
     >
       {children}
-      <span className="max-sm:sr-only">{label}</span>
+      <span className="sr-only">{label}</span>
     </button>
   );
 }

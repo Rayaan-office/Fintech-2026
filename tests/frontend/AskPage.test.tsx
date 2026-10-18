@@ -67,10 +67,16 @@ function setup({ replies = [askReply(), forecastReply] as (AskReply | { status: 
 const bodyOf = (init: RequestInit | undefined) => JSON.parse(String(init?.body ?? "null"));
 const conversation = () => screen.getByRole("list", { name: "Conversation" });
 
+/** Example questions sit under topic tabs, as short chips that send the full question. */
+async function askExample(topic: string, chip: string) {
+  await userEvent.click(await screen.findByRole("tab", { name: topic }));
+  await userEvent.click(await screen.findByRole("button", { name: chip }));
+}
+
 describe("Ask", () => {
   it("answers with the AI label, a table from our records and its sources", async () => {
     const { calls } = setup();
-    await userEvent.click(await screen.findByRole("button", { name: "Who owes me the most?" }));
+    await askExample("Customers", "Who owes the most");
     expect(await screen.findByText(/Bright Cafe owes you the most/)).toBeInTheDocument();
     expect(bodyOf(calls.find((c) => c.path === "/api/ask")!.init)).toEqual({ question: "Who owes me the most?" });
 
@@ -87,7 +93,7 @@ describe("Ask", () => {
 
   it("asks a follow-up in the same conversation and shows a small chart", async () => {
     const { calls } = setup();
-    await userEvent.click(await screen.findByRole("button", { name: "Who owes me the most?" }));
+    await askExample("Customers", "Who owes the most");
     await userEvent.click(await screen.findByRole("button", { name: "What does my cash look like next month?" }));
     expect(await screen.findByText(/Your cash stays above/)).toBeInTheDocument();
     const asks = calls.filter((c) => c.path === "/api/ask").map((c) => bodyOf(c.init));
@@ -99,7 +105,7 @@ describe("Ask", () => {
 
   it("drafts the suggested reminder only when clicked, and shows its approval card in the chat", async () => {
     const { calls } = setup();
-    await userEvent.click(await screen.findByRole("button", { name: "Who owes me the most?" }));
+    await askExample("Customers", "Who owes the most");
     expect(calls.some((c) => c.path.endsWith("/act"))).toBe(false);
     await userEvent.click(await screen.findByRole("button", { name: "Draft a payment reminder to Bright Cafe" }));
     const card = await screen.findByRole("region", { name: "Confirm: Email Bright Cafe: Invoice INV-1042" });
@@ -109,6 +115,9 @@ describe("Ask", () => {
 
   it("opens an earlier conversation and continues it", async () => {
     const { calls } = setup({ replies: [askReply({ thread_id: "t0" })] });
+    // Earlier conversations wait behind the History button, so the page starts with just the question box
+    expect(screen.queryByRole("navigation", { name: "Earlier conversations" })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "History" }));
     const history = await screen.findByRole("navigation", { name: "Earlier conversations" });
     await userEvent.click(await within(history).findByRole("button", { name: /Has Acme raised its prices\?/ }));
     expect(await screen.findByText(/I couldn't word an answer I could check/)).toBeInTheDocument();
@@ -124,7 +133,7 @@ describe("Ask", () => {
 
   it("explains a failure and tries again", async () => {
     setup({ replies: [{ status: 429, detail: "Too many requests. Please wait a moment and try again." }, askReply()] });
-    await userEvent.click(await screen.findByRole("button", { name: "Who owes me the most?" }));
+    await askExample("Customers", "Who owes the most");
     expect(await screen.findByText("Too many requests. Please wait a moment and try again.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Try again/ }));
     expect(await screen.findByText(/Bright Cafe owes you the most/)).toBeInTheDocument();

@@ -127,20 +127,30 @@ function setup({ me = owner, items, summary = numbers }: { me?: Me; items: Recom
 }
 
 const cardFor = async (title: string) => (await screen.findByRole("listitem", { name: title })) as HTMLElement;
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function openCard(title: string) {
+  await userEvent.click(within(await cardFor(title)).getByRole("button", { name: new RegExp(`^${escapeRe(title)}`) }));
+  return screen.findByRole("dialog", { name: title });
+}
 
 describe("Getting paid", () => {
-  it("shows the reminder step, the invoices it covers and that it carries a payment link", async () => {
+  it("shows the reminder step on the row, and the track, invoices and payment link in the panel", async () => {
     const { calls } = setup({ items: [reminder(2)] });
     const card = await cardFor("Bright Cafe still owes £893.64: send a firmer reminder");
     expect(card).toHaveTextContent("Payment reminder");
     expect(card).toHaveTextContent("Reminder 2 of 3");
-    const invoices = within(card).getByRole("region", { name: "Invoices in this reminder" });
+    const panel = await openCard("Bright Cafe still owes £893.64: send a firmer reminder");
+    const invoices = within(panel).getByRole("region", { name: "Invoices in this reminder" });
+    const track = within(invoices).getByRole("list", { name: "Reminder 2 of 3" });
+    const steps = within(track).getAllByRole("listitem");
+    expect(steps.map((step) => step.textContent)).toEqual([expect.stringContaining("Friendly"), expect.stringContaining("Firm"), expect.stringContaining("Final notice")]);
+    expect(within(track).getByText("Firm").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(track).toHaveTextContent("Sent 1 Oct 2026");
     expect(invoices).toHaveTextContent("INV-2049");
     expect(invoices).toHaveTextContent("£433.80");
     expect(invoices).toHaveTextContent("11 days overdue");
-    expect(invoices).toHaveTextContent("Sent before: reminder 1 on 1 Oct 2026.");
     expect(invoices).toHaveTextContent("Includes a link to pay online by card, made only once the reminder is approved.");
-    expect(card).not.toHaveTextContent("A business owner approves");
+    expect(panel).not.toHaveTextContent("A business owner approves");
     await userEvent.click(within(card).getByRole("button", { name: "Draft reminder 2 of 3 to Bright Cafe" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/recommendations/rem2/next-step")).toBe(true));
   });
@@ -149,8 +159,9 @@ describe("Getting paid", () => {
     setup({ items: [reminder(3, { link: "none", links_configured: false })] });
     const card = await cardFor("Bright Cafe still hasn't paid £893.64: send a final notice");
     expect(card).toHaveTextContent("Reminder 3 of 3");
-    expect(card).toHaveTextContent("A business owner approves");
-    expect(card).toHaveTextContent("No card payment link: payment links aren't set up yet. Add a payment link key to include one.");
+    const panel = await openCard("Bright Cafe still hasn't paid £893.64: send a final notice");
+    expect(panel).toHaveTextContent("A business owner approves");
+    expect(panel).toHaveTextContent("No card payment link: payment links aren't set up yet. Add a payment link key to include one.");
   });
 
   it("prepares the bank charge and shows what will change, for a finance manager or owner to approve", async () => {
@@ -167,8 +178,7 @@ describe("Getting paid", () => {
 
   it("compares the ways of paying in the side panel", async () => {
     setup({ items: [costs()] });
-    await userEvent.click(within(await cardFor("Amsterdam Bakehouse BV's payments arrived £175.22 short")).getByRole("button", { name: "See before and after" }));
-    const panel = await screen.findByRole("dialog");
+    const panel = await openCard("Amsterdam Bakehouse BV's payments arrived £175.22 short");
     const table = within(panel).getByRole("region", { name: "How this customer pays" });
     const row = within(table).getByRole("row", { name: /International transfer/ });
     expect(row).toHaveTextContent("10");
@@ -187,16 +197,22 @@ describe("Getting paid", () => {
     expect(await cardFor("Amsterdam Bakehouse BV's payments arrived £175.22 short")).toHaveTextContent("Bank charge recorded");
   });
 
-  it("shows what getting paid cost over the last 180 days", async () => {
+  it("folds what getting paid cost over the last 180 days behind one click", async () => {
     setup({ items: [costs()] });
     const summary = await screen.findByRole("region", { name: "Getting paid, last 180 days" });
-    expect(summary).toHaveTextContent("Lost to payments arriving short£175.22");
-    expect(summary).toHaveTextContent("10 payments, £175.22 still to record as bank charges");
-    expect(summary).toHaveTextContent("Could save if those customers paid by card£45.49");
-    expect(summary).toHaveTextContent("After card fees at 1.5% + 20p (a typical rate for a UK card), or 3.25% + 20p (a typical rate for a card from abroad)");
+    const toggle = within(summary).getByRole("button", { name: "Getting paid, last 180 days" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(summary).not.toHaveTextContent("Lost to short payments");
+    await userEvent.click(toggle);
+    expect(summary).toHaveTextContent("Lost to short payments£175.22");
+    expect(summary).toHaveTextContent("10 payments");
+    expect(summary).toHaveTextContent("To record as bank charges£175.22");
+    expect(summary).toHaveTextContent("Could save by card£45.49");
     expect(summary).toHaveTextContent("Not enough card payments yet");
-    expect(summary).toHaveTextContent("Bank transfers take 21 days on average");
     expect(summary).toHaveTextContent("Card payment links aren't set up yet");
+    await userEvent.click(within(summary).getByRole("button", { name: "How we work these out" }));
+    expect(await screen.findByText("After card fees at 1.5% + 20p (a typical rate for a UK card), or 3.25% + 20p (a typical rate for a card from abroad).")).toBeInTheDocument();
+    expect(screen.getByText("Bank transfers take 21 days on average.")).toBeInTheDocument();
   });
 
   it("leaves the summary out when there is nothing to show", async () => {

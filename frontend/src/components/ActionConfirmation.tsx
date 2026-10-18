@@ -117,7 +117,7 @@ function Decided({ action: a }: { action: Action }) {
   // A failure's message, or why the server cancelled a stale suggestion
   const message = a.status === "failed" ? (a.result?.message as string | undefined) : a.status === "cancelled" ? (a.result?.reason as string | undefined) : undefined;
   return (
-    <div className="flex items-center gap-3 rounded-xl border bg-card px-5 py-4 shadow-card" role="status">
+    <div className="flex items-center gap-3 rounded-xl border bg-card px-5 py-4" role="status">
       <motion.span
         initial={{ scale: 0.6, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}

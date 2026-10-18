@@ -4,54 +4,61 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Design tokens. Soft neutral greys, one accent (indigo), and status colours that are only
- * used for meaning: green = done/healthy/money in, amber = needs attention, red = urgent.
- * Money out stays neutral so pages never look alarming by default.
+ * Design tokens. Light first: a white page, quiet greys, near-black text and one accent (indigo).
+ * Status colours are only used for meaning: green = done/healthy/money in, amber = needs attention,
+ * red = urgent. Money out stays neutral so pages never look alarming by default. Surfaces are flat:
+ * sections are separated by space and hairlines, not by boxes and shadows.
  */
 :root {
   --radius: 0.75rem;
 
-  --background: oklch(0.985 0.002 260);
-  --foreground: oklch(0.22 0.01 260);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.24 0.012 280);
   --card: oklch(1 0 0);
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
 
-  --primary: oklch(0.51 0.2 272);
+  --primary: oklch(0.55 0.19 272);
   --primary-foreground: oklch(0.99 0 0);
-  --primary-soft: oklch(0.96 0.025 272);
+  --primary-soft: oklch(0.955 0.03 272);
 
-  --secondary: oklch(0.965 0.003 260);
+  --secondary: oklch(0.962 0.003 280);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.965 0.003 260);
-  --muted-foreground: oklch(0.5 0.012 260);
-  --accent: oklch(0.955 0.004 260);
+  --muted: oklch(0.967 0.003 280);
+  --muted-foreground: oklch(0.52 0.012 280);
+  --accent: oklch(0.955 0.004 280);
   --accent-foreground: var(--foreground);
 
-  --border: oklch(0.915 0.004 260);
-  --input: oklch(0.89 0.005 260);
-  --ring: oklch(0.51 0.2 272 / 0.45);
+  --border: oklch(0.928 0.004 280);
+  --input: oklch(0.9 0.005 280);
+  --ring: oklch(0.55 0.19 272 / 0.45);
 
-  --positive: oklch(0.52 0.13 155);
+  --positive: oklch(0.53 0.13 155);
   --positive-soft: oklch(0.96 0.035 155);
-  --warning: oklch(0.56 0.13 70);
+  --warning: oklch(0.58 0.13 65);
   --warning-soft: oklch(0.965 0.045 85);
-  --danger: oklch(0.55 0.19 27);
-  --danger-soft: oklch(0.96 0.025 27);
+  --danger: oklch(0.56 0.19 27);
+  --danger-soft: oklch(0.962 0.025 27);
   --destructive: var(--danger);
 
   --money-in: var(--positive);
   --money-out: var(--foreground);
 
+  /* Charts: the accent first, then calm hues that stay apart from the status colours */
   --chart-1: var(--primary);
-  --chart-band: oklch(0.51 0.2 272 / 0.12);
-  --chart-grid: oklch(0.93 0.004 260);
+  --chart-2: oklch(0.72 0.11 230);
+  --chart-3: oklch(0.78 0.1 190);
+  --chart-4: oklch(0.8 0.09 300);
+  --chart-5: oklch(0.82 0.08 80);
+  --chart-6: oklch(0.86 0.01 280);
+  --chart-band: oklch(0.55 0.19 272 / 0.1);
+  --chart-grid: oklch(0.94 0.003 280);
 
-  --sidebar: oklch(0.975 0.003 260);
+  --sidebar: oklch(0.988 0.002 280);
 
-  --shadow-card: 0 1px 2px oklch(0.2 0.01 260 / 0.04), 0 1px 1px oklch(0.2 0.01 260 / 0.02);
-  --shadow-panel: 0 16px 48px oklch(0.2 0.01 260 / 0.14);
+  --shadow-card: 0 0 0 0 transparent;
+  --shadow-panel: 0 12px 40px oklch(0.2 0.01 280 / 0.12), 0 2px 6px oklch(0.2 0.01 280 / 0.05);
 }
 
 .dark {
@@ -84,6 +91,11 @@
   --danger: oklch(0.72 0.16 27);
   --danger-soft: oklch(0.3 0.06 27);
 
+  --chart-2: oklch(0.7 0.1 230);
+  --chart-3: oklch(0.72 0.09 190);
+  --chart-4: oklch(0.72 0.09 300);
+  --chart-5: oklch(0.78 0.09 80);
+  --chart-6: oklch(0.45 0.01 280);
   --chart-band: oklch(0.68 0.16 272 / 0.18);
   --chart-grid: oklch(0.28 0.008 260);
 
@@ -124,6 +136,12 @@
   --color-money-in: var(--money-in);
   --color-money-out: var(--money-out);
   --color-sidebar: var(--sidebar);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
 
   --radius-sm: calc(var(--radius) - 6px);
   --radius-md: calc(var(--radius) - 4px);
@@ -140,6 +158,10 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;

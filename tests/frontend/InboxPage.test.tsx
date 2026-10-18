@@ -105,7 +105,7 @@ describe("Inbox", () => {
     const { calls } = setup({ done: [action({ id: "a1", status: "executed", can_undo: true, decided_at: new Date().toISOString(), requested_by: "suggested by AI" })] });
     await userEvent.click(await screen.findByRole("tab", { name: "Done" }));
     const list = await screen.findByRole("list", { name: "Done" });
-    expect(list).toHaveTextContent("Done · suggested by AI");
+    expect(within(list).getByRole("listitem")).toHaveTextContent(/^Record bill: £658\.56 from Acme Supplies\s*Done/);
     await userEvent.click(within(list).getByRole("button", { name: /Undo: Record bill/ }));
     await waitFor(() => expect(calls.some((c) => c.path === "/api/actions/a1/undo")).toBe(true));
   });
@@ -159,6 +159,41 @@ describe("Inbox", () => {
     expect(screen.queryByRole("region", { name: "Confirm: Record bill: £658.56 from Acme Supplies" })).not.toBeInTheDocument();
     await userEvent.click(also);
     expect(screen.getByRole("region", { name: "Confirm: Record bill: £658.56 from Acme Supplies" })).toBeInTheDocument();
+  });
+
+  it("flags fraud warnings on the row in a few words, with the full reasons on hover", async () => {
+    const fraud = action({ id: "a5", reasons: ["Changed bank details: The bank details on this bill differ from the ones on record.", "Look-alike sender: The email address looks like Acme's."] });
+    const { calls } = setup({ pending: [fraud] });
+    const row = await screen.findByRole("button", { name: /^Record bill: £658\.56 from Acme Supplies/ });
+    expect(row).toHaveTextContent("Changed bank details");
+    expect(row).toHaveTextContent("Look-alike sender");
+    expect(row).not.toHaveTextContent("differ from the ones on record");
+    expect(row).toHaveAttribute("title", expect.stringContaining("The bank details on this bill differ from the ones on record."));
+    // A warning is always read in the card: no bulk selection, and A opens the card instead of approving
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await userEvent.keyboard("a");
+    expect(await screen.findByRole("region", { name: /^Confirm: Record bill/ })).toBeInTheDocument();
+    expect(calls.some((c) => c.path.endsWith("/approve"))).toBe(false);
+  });
+
+  it("opens on a short queue, and J past it shows the rest", async () => {
+    const many = Array.from({ length: 7 }, (_, i) => action({ id: `q${i}`, summary: `Record bill: £${i + 1}.00 from Supplier ${i + 1}` }));
+    setup({ pending: many });
+    const list = await screen.findByRole("list", { name: "Needs approval" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "Show all 7" })).toHaveAttribute("aria-expanded", "false");
+    for (let i = 0; i < 5; i++) await userEvent.keyboard("j");
+    expect(within(list).getAllByRole("listitem")).toHaveLength(7);
+    expect(within(list).getAllByRole("listitem")[5]).toHaveAttribute("aria-current", "true");
+  });
+
+  it("approves several small changes together from a bar that appears on selection", async () => {
+    const { calls } = setup({ pending: [action(), bankChange] });
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Select: Record bill/ }));
+    // The two-person change can't be bulk-approved
+    expect(screen.queryByRole("checkbox", { name: /Select: Change bank details/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Approve 1 selected" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/actions/a1/approve")).toBe(true));
   });
 
   it("says why a stale suggestion was cancelled", async () => {

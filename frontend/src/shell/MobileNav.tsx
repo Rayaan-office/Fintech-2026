@@ -2,7 +2,7 @@ import { EllipsisIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { useState } from "react";
-import { NavLink } from "react-router";
+import { NavLink, matchPath, useLocation } from "react-router";
 import { useCurrentUser } from "@/api/auth";
 import { cn } from "@/lib/utils";
 import { visibleNav } from "./nav";
@@ -13,10 +13,13 @@ export function MobileNav({ inboxCount }: { inboxCount?: number }) {
   const me = useCurrentUser();
   const [open, setOpen] = useState(false);
   const items = visibleNav(me).filter((i) => i.phone).slice(0, 4);
+  const { pathname } = useLocation();
+  // "More" reads as the current place when the page lives in the drawer
+  const inDrawer = !items.some((i) => matchPath({ path: i.to, end: i.to === "/" }, pathname));
 
   return (
     <>
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
         <ul className="flex">
           {items.map((item) => {
             const Icon = item.icon;
@@ -26,16 +29,25 @@ export function MobileNav({ inboxCount }: { inboxCount?: number }) {
                   to={item.to}
                   end={item.to === "/"}
                   className={({ isActive }) =>
-                    cn("relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted-foreground", isActive && "text-primary")
+                    cn("group relative flex h-14 flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground", isActive && "text-foreground")
                   }
                 >
-                  <Icon className="size-5" aria-hidden />
-                  <span className="max-w-full truncate px-1">{item.label}</span>
-                  {item.to === "/inbox" && inboxCount ? (
-                    <span className="absolute left-1/2 top-1.5 ml-2 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground tabular">
-                      {inboxCount > 99 ? "99+" : inboxCount}
-                    </span>
-                  ) : null}
+                  {({ isActive }) => (
+                    <>
+                      <span className={cn("flex h-7 w-12 items-center justify-center rounded-full transition-colors", isActive && "bg-accent")}>
+                        <Icon className="size-[18px]" aria-hidden />
+                      </span>
+                      <span className="max-w-full truncate px-1 leading-none">{item.label}</span>
+                      {item.to === "/inbox" && inboxCount ? (
+                        <span
+                          aria-label={`${inboxCount} waiting`}
+                          className="absolute left-1/2 top-1 ml-1.5 min-w-4 rounded-full bg-foreground px-1 text-center text-[10px] leading-4 text-background tabular"
+                        >
+                          {inboxCount > 99 ? "99+" : inboxCount}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
                 </NavLink>
               </li>
             );
@@ -44,10 +56,13 @@ export function MobileNav({ inboxCount }: { inboxCount?: number }) {
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted-foreground"
+              aria-haspopup="dialog"
+              className={cn("flex h-14 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground", inDrawer && "text-foreground")}
             >
-              <EllipsisIcon className="size-5" aria-hidden />
-              More
+              <span className={cn("flex h-7 w-12 items-center justify-center rounded-full", inDrawer && "bg-accent")}>
+                <EllipsisIcon className="size-[18px]" aria-hidden />
+              </span>
+              <span className="leading-none">More</span>
             </button>
           </li>
         </ul>
@@ -66,17 +81,17 @@ export function MobileNav({ inboxCount }: { inboxCount?: number }) {
                   animate={{ x: 0 }}
                   exit={{ x: "-100%" }}
                   transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
-                  className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-sidebar px-3 pb-6 pt-4 shadow-panel"
+                  className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-sidebar px-3 pb-6 pt-3 shadow-panel"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex h-10 items-center justify-between">
                     <BrandMark name={me.business.name} />
-                    <DialogPrimitive.Close className="rounded-md p-2 text-muted-foreground hover:bg-accent">
+                    <DialogPrimitive.Close className="rounded-full p-2 text-muted-foreground hover:bg-accent">
                       <XIcon className="size-4" aria-hidden />
                       <span className="sr-only">Close menu</span>
                     </DialogPrimitive.Close>
                   </div>
                   <DialogPrimitive.Title className="sr-only">Menu</DialogPrimitive.Title>
-                  <div className="mt-6 flex flex-1 flex-col overflow-y-auto">
+                  <div className="mt-4 flex flex-1 flex-col overflow-y-auto">
                     <NavList inboxCount={inboxCount} onNavigate={() => setOpen(false)} />
                   </div>
                 </motion.div>

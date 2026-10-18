@@ -1,7 +1,7 @@
 import { PauseCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Outlet } from "react-router";
+import { Link, Outlet } from "react-router";
 import { useCan, useCurrentUser } from "@/api/auth";
 import { useInbox } from "@/api/hooks";
 import { useLiveUpdates } from "@/api/live";
@@ -45,9 +45,12 @@ export function AppShell() {
       <div className="flex min-h-dvh flex-col md:pl-60">
         <TopBar onSearch={() => setSearchOpen(true)} onShortcuts={() => setShortcutsOpen(true)} />
         {me.business.ai_paused && (
-          <div role="status" className="flex items-center gap-2 border-b bg-warning-soft px-4 py-2 text-sm sm:px-6">
-            <PauseCircleIcon className="size-4 text-warning" aria-hidden />
-            AI actions are paused. Everything waits for a person until AI is switched back on in Settings.
+          <div role="status" className="mx-4 mt-1 flex items-center gap-2 rounded-full bg-warning-soft px-4 py-1.5 text-sm sm:mx-6 lg:mx-8">
+            <PauseCircleIcon className="size-4 shrink-0 text-warning" aria-hidden />
+            <span className="min-w-0 flex-1">AI actions are paused. Everything waits for a person.</span>
+            <Link to="/settings" className="shrink-0 font-medium underline-offset-4 hover:underline">
+              Settings
+            </Link>
           </div>
         )}
         <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-6 outline-none sm:px-6 md:pb-10 lg:px-8">

@@ -49,11 +49,15 @@ describe("Cash flow", () => {
 
     const warnings = within(screen.getByRole("heading", { name: "Warnings" }).closest("section")!);
     expect(warnings.getByText(/VAT \(estimated\) on 7 November will take you below your safety level/)).toBeInTheDocument();
+    // The reasoning is one click away, not on the page
+    expect(screen.queryByText(/against a safety level of £10,000.00/)).not.toBeInTheDocument();
     await userEvent.click(warnings.getByRole("button", { name: "Why am I seeing this?" }));
-    expect(warnings.getByText(/against a safety level of £10,000.00/)).toBeInTheDocument();
+    expect(await screen.findByText(/against a safety level of £10,000.00/)).toBeInTheDocument();
     expect(warnings.getByRole("link", { name: "Ways to cover it" })).toHaveAttribute("href", "/financing");
 
-    expect(screen.getByText(/Two weeks of your usual spending/)).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "About the safety level" }));
+    expect(await screen.findByText(/Two weeks of your usual spending/)).toBeInTheDocument();
   });
 
   it("moves a bill with the arrow keys and shows the new lowest point next to the old one", async () => {
@@ -73,7 +77,7 @@ describe("Cash flow", () => {
     // Asked once the keys stopped, not for the day in between
     expect(whatIfBodies(calls)).toEqual([{ planned: [], excluded_bill_ids: [], moved_bills: [{ id: "bill:b1", date: "2026-11-03" }] }]);
 
-    const row = screen.getByText("Acme Supplies bill AS-1005", { selector: "span" }).closest("li")!;
+    const row = screen.getByRole("switch", { name: "Include Acme Supplies bill AS-1005 in the forecast" }).closest("tr")!;
     expect(row).toHaveTextContent("Moved from 1 Nov");
     await userEvent.click(within(row).getByRole("button", { name: /Put back/ }));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -152,27 +156,55 @@ describe("Cash flow", () => {
     expect(screen.getByText("Lowest point in the next 90 days")).toBeInTheDocument();
   });
 
-  it("explains why cash changed, with the AI label and what the AI saw", async () => {
+  it("explains why cash changed: the drivers drawn, the AI's words folded away with what the AI saw", async () => {
     const { calls } = setup();
-    const why = within((await screen.findByRole("heading", { name: "Why cash changed" })).closest("section")!);
+    await userEvent.click(await screen.findByRole("tab", { name: "Why cash changed" }));
+    const why = within(screen.getByRole("tabpanel"));
+    const reasons = await why.findByRole("list", { name: "Reasons, largest first" });
+    expect(within(reasons).getAllByRole("listitem")[0]).toHaveTextContent(/Customer payments.*Bright Cafe, Hill Farm Shop.*−£2,100.00less cash/);
+    expect(within(reasons).getAllByRole("listitem")[2]).toHaveTextContent(/Card sales.*\+£300.00more cash/);
+    expect(why.getByText(/Change in cash/).parentElement).toHaveTextContent(/1 Oct – 18 Oct.*−£2,780\.00.*against 1 Sept? – 18 Sept?/);
+
+    expect(why.queryByText(/Customers paid £2,100.00 less/)).not.toBeInTheDocument();
+    await userEvent.click(why.getByRole("button", { name: "Summary" }));
     expect(await why.findByText(/Customers paid £2,100.00 less/)).toBeInTheDocument();
     expect(why.getByText("Checked against your records")).toBeInTheDocument();
     await userEvent.click(why.getByRole("button", { name: "What the AI saw" }));
     expect(why.getByTestId("ai-saw")).toHaveTextContent("[CUSTOMER_1] £1,240.00");
-    const reasons = why.getByRole("list", { name: "Reasons, largest first" });
-    expect(within(reasons).getAllByRole("listitem")[0]).toHaveTextContent(/Customer payments.*Bright Cafe, Hill Farm Shop.*−£2,100.00less cash/);
-    expect(within(reasons).getAllByRole("listitem")[2]).toHaveTextContent(/Card sales.*\+£300.00more cash/);
 
-    await userEvent.click(why.getByRole("tab", { name: "Last 30 days" }));
+    await userEvent.click(why.getByRole("radio", { name: "Last 30 days" }));
     await waitFor(() => expect(calls.some((c) => c.path === "/api/cash-flow/why" && c.url.searchParams.get("period") === "30d")).toBe(true));
   });
 
   it("shows our own wording without the AI label when the AI didn't write it", async () => {
     const own = whyCash();
     setup({ why: { ...own, explanation: { text: own.sentence, redacted_input: "", ai_written: false } } });
-    const why = within((await screen.findByRole("heading", { name: "Why cash changed" })).closest("section")!);
+    await userEvent.click(await screen.findByRole("tab", { name: "Why cash changed" }));
+    const why = within(screen.getByRole("tabpanel"));
+    await userEvent.click(await why.findByRole("button", { name: "Summary" }));
     expect(await why.findByText(/The main reasons: customer payments/)).toBeInTheDocument();
     expect(why.queryByText("Checked against your records")).not.toBeInTheDocument();
+  });
+
+  it("folds a long list of money going out, and a crowded bill strip", async () => {
+    const extra = Array.from({ length: 6 }, (_, i) => ({ id: `bill:x${i}`, date: "2026-10-19", label: `Supplier ${i + 1} bill X-${i}`, amount_minor: 10000, movable: true }));
+    setup({ data: cashFlow({ bills: [...extra, ...cashFlow().bills] }) });
+    const table = await screen.findByRole("table", { name: /Money going out/ });
+    expect(within(table).getAllByRole("row")).toHaveLength(6); // the heading row and five
+    await userEvent.click(screen.getByRole("button", { name: "Show all 10" }));
+    expect(within(table).getAllByRole("row")).toHaveLength(11);
+
+    // Bills on the same day stack two rows high; the rest are one click away
+    const strip = within(screen.getByRole("heading", { name: /Move a bill/ }).closest("section")!);
+    expect(strip.getAllByRole("slider")).toHaveLength(3); // two of the six on 19 October, and BrightSpark on 5 November
+    // Regression: a bill moved into a folded row vanished from the strip, taking the keyboard focus with it
+    const first = strip.getAllByRole("slider")[0]!;
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(first, { key: "ArrowRight" });
+    expect(first).toBeInTheDocument();
+    expect(first).toHaveAttribute("aria-valuenow", "4");
+
+    await userEvent.click(strip.getByRole("button", { name: "Show all 8" }));
+    expect(strip.getAllByRole("slider")).toHaveLength(8);
   });
 
   it("lets a bookkeeper try costs but not keep them, and doesn't offer financing", async () => {

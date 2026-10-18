@@ -1,32 +1,43 @@
-import { CheckCheckIcon, FileSearchIcon, InboxIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import {
+  BanknoteIcon,
+  CheckCheckIcon,
+  CircleDotIcon,
+  FileSearchIcon,
+  InboxIcon,
+  LandmarkIcon,
+  LinkIcon,
+  MailIcon,
+  ReceiptIcon,
+  TriangleAlertIcon,
+  Undo2Icon,
+  type LucideIcon,
+} from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
+import { useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useApproveAction, useInbox, useUndoAction } from "@/api/hooks";
 import type { Action, Inbox, InboxItem, InboxTab } from "@/api/types";
 import { ActionConfirmation, approveBlockedReason, useDecisionToasts } from "@/components/ActionConfirmation";
-import { ApprovalBadge } from "@/components/ApprovalBadge";
 import { DocumentReview } from "@/components/DocumentReview";
+import { IconTile } from "@/components/kit";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { FocusedPanel } from "@/components/panels";
 import { QueryView } from "@/components/QueryView";
 import { ListSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/states";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Kbd } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrentUser } from "@/api/auth";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TABS: { id: InboxTab; label: string; empty: string }[] = [
-  { id: "to_review", label: "To review", empty: "Nothing to check. Documents we couldn't finish on our own will appear here." },
+  { id: "to_review", label: "To review", empty: "Documents we couldn't finish on our own will appear here." },
   { id: "needs_approval", label: "Needs approval", empty: "Nothing waiting for approval." },
   { id: "done", label: "Done", empty: "Items you've handled will be listed here." },
 ];
@@ -40,11 +51,44 @@ const DONE_LABEL: Record<Action["status"], string> = {
   undone: "Undone",
 };
 
+const DONE_DOT: Record<Action["status"], string> = {
+  pending: "bg-warning",
+  executed: "bg-positive",
+  rejected: "bg-danger",
+  cancelled: "bg-muted-foreground/50",
+  failed: "bg-danger",
+  undone: "bg-muted-foreground/50",
+};
+
+/** The fraud checks' own labels, which start a reason such as "Changed bank details: ...". */
+const WARNINGS = ["Changed bank details", "Bank details changed", "Duplicate invoice", "Look-alike sender", "Failed sender checks", "Unusual amount", "Pressure tactics"];
+
+/** Rows shown before "Show all": the inbox opens on a short queue. */
+const FIRST_ROWS = 5;
+
 const isDocument = (i: InboxItem) => i.kind === "document";
+
+function warningsOf(item: InboxItem): string[] {
+  if (isDocument(item)) return item.warnings.map((w) => w.label);
+  if (item.status !== "pending") return [];
+  return item.reasons.flatMap((r) => WARNINGS.filter((w) => r.startsWith(`${w}:`)));
+}
+
+function iconFor(item: InboxItem): LucideIcon {
+  if (isDocument(item)) return FileSearchIcon;
+  const t = item.type;
+  if (/bank_charge/.test(t)) return ReceiptIcon;
+  if (/bank/.test(t)) return LandmarkIcon;
+  if (/email|reminder/.test(t)) return MailIcon;
+  if (/match/.test(t)) return LinkIcon;
+  if (/payment|financ/.test(t)) return BanknoteIcon;
+  if (/document|bill/.test(t)) return ReceiptIcon;
+  return CircleDotIcon;
+}
 
 export default function InboxPage() {
   const [params, setParams] = useSearchParams();
-  // A notification links to /inbox?action=<id>: open that one on the approvals tab
+  // A notification or search result links to /inbox?action=<id>: open that one on the approvals tab
   const linked = params.get("action");
   const [chosen, setTab] = useState<InboxTab | null>(linked ? "needs_approval" : null);
   // Until the person picks a tab: approvals first, unless only documents are waiting
@@ -55,22 +99,13 @@ export default function InboxPage() {
   const counts = inbox.data?.counts ?? firstCounts;
 
   return (
-    <div className="grid grid-cols-1 gap-6">
-      <PageHeader title="Inbox" description="Everything waiting for a person, with the reason it needs one." />
-      <Tabs value={tab} onValueChange={(v) => setTab(v as InboxTab)}>
-        <TabsList>
-          {TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id}>
-              {t.label}
-              {t.id !== "done" && counts && counts[t.id] > 0 && <span className="text-xs text-muted-foreground tabular">{counts[t.id]}</span>}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+    <div className="grid grid-cols-1 gap-8">
+      <PageHeader title="Inbox" />
+      <InboxTabs tab={tab} counts={counts} onChange={setTab} />
       <QueryView
         query={inbox}
-        loading={<ListSkeleton rows={6} />}
-        empty={<EmptyState icon={InboxIcon} title="Your inbox is empty" description="When a document needs checking or an action needs approval, it will appear here." />}
+        loading={<ListSkeleton rows={5} />}
+        empty={<EmptyState icon={InboxIcon} title="Your inbox is empty" description="Documents to check and changes to approve will appear here." />}
       >
         {(data) => (
           <InboxList
@@ -94,18 +129,42 @@ export default function InboxPage() {
   );
 }
 
+function InboxTabs({ tab, counts, onChange }: { tab: InboxTab; counts: Inbox["counts"] | undefined; onChange: (t: InboxTab) => void }) {
+  return (
+    <Tabs value={tab} onValueChange={(v) => onChange(v as InboxTab)}>
+      <TabsList>
+        {TABS.map((t) => (
+          <TabsTrigger key={t.id} value={t.id}>
+            {t.label}
+            {t.id !== "done" && counts && counts[t.id] > 0 && <span className="text-xs text-muted-foreground tabular">{counts[t.id]}</span>}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
 function InboxList({ tab, data, linkedId, onLinkedHandled }: { tab: InboxTab; data: Inbox; linkedId: string | null; onLinkedHandled: () => void }) {
   const approve = useApproveAction();
   const announce = useDecisionToasts();
+  const reduce = useReducedMotion();
   const items = data.items;
   const [cursor, setCursor] = useState(0);
   const [openId, setOpenId] = useState<string | null>(() => (linkedId && items.some((i) => i.id === linkedId) ? linkedId : null));
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [all, setAll] = useState(false);
 
   const current = items[Math.min(cursor, items.length - 1)];
   const open = items.find((i) => i.id === openId) ?? null;
   // Quick approval (without opening the card) only for one-person changes this person may approve
-  const canQuickApprove = (i: InboxItem): i is Action => !isDocument(i) && i.status === "pending" && i.can_approve && i.required_approvals === 1;
+  // and never for anything carrying a fraud warning: those always open, so the warning is read first
+  const canQuickApprove = (i: InboxItem): i is Action => !isDocument(i) && i.status === "pending" && i.can_approve && i.required_approvals === 1 && warningsOf(i).length === 0;
+  const anySelectable = tab === "needs_approval" && items.some(canQuickApprove);
+
+  // The short queue grows when the keyboard (or a link) reaches past it
+  const openIndex = items.findIndex((i) => i.id === openId);
+  const expanded = all || cursor >= FIRST_ROWS || openIndex >= FIRST_ROWS;
+  const visible = expanded ? items : items.slice(0, FIRST_ROWS);
 
   const close = () => {
     setOpenId(null);
@@ -125,8 +184,8 @@ function InboxList({ tab, data, linkedId, onLinkedHandled }: { tab: InboxTab; da
       if (isDocument(current) || current.status !== "pending") return setOpenId(current.id);
       const blocked = approveBlockedReason(current);
       if (blocked) return toast(blocked);
-      // Level 3 and 4 always open the card so the person sees exactly what will happen
-      if (current.level >= 3) return setOpenId(current.id);
+      // Level 3 and 4, and anything with a warning, always open the card so the person sees exactly what will happen
+      if (current.level >= 3 || warningsOf(current).length > 0) return setOpenId(current.id);
       approve.mutate(current.id, { onSuccess: announce, onError: (err) => toast.error(errorMessage(err)) });
     },
     keys,
@@ -162,58 +221,69 @@ function InboxList({ tab, data, linkedId, onLinkedHandled }: { tab: InboxTab; da
 
   return (
     <>
-      <div className={cn("flex-wrap items-center justify-between gap-3", selectedCount > 0 ? "flex" : items.length > 0 ? "hidden lg:flex" : "hidden")}>
+      <AnimatePresence>
         {selectedCount > 0 && (
-          <Button onClick={() => void approveSelected()} disabled={approve.isPending}>
-            <CheckCheckIcon aria-hidden /> Approve {selectedCount} selected
-          </Button>
+          <motion.div
+            initial={reduce ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? undefined : { opacity: 0, y: 12 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-x-0 bottom-20 z-30 flex justify-center px-4 md:bottom-6"
+          >
+            <div className="flex items-center gap-3 rounded-full border bg-card py-1.5 pr-1.5 pl-4 text-sm shadow-panel">
+              <span className="tabular text-muted-foreground">{selectedCount} selected</span>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+              <Button size="sm" onClick={() => void approveSelected()} disabled={approve.isPending}>
+                <CheckCheckIcon aria-hidden /> Approve {selectedCount} selected
+              </Button>
+            </div>
+          </motion.div>
         )}
-        {items.length > 0 && (
-          <p className="ml-auto hidden items-center gap-1 text-xs text-muted-foreground lg:flex">
-            <Kbd>J</Kbd>
-            <Kbd>K</Kbd> to move, <Kbd>A</Kbd> approve, <Kbd>E</Kbd> open
-          </p>
-        )}
-      </div>
+      </AnimatePresence>
 
       {items.length === 0 ? (
         <EmptyState icon={InboxIcon} title="All clear" description={label.empty} />
       ) : (
-        <ul className="divide-y overflow-hidden rounded-xl border bg-card shadow-card" aria-label={label.label}>
-          <AnimatePresence initial={false}>
-            {items.map((item, i) => (
-              <motion.li
-                key={item.id}
-                layout
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: 40 }}
-                transition={{ duration: 0.2 }}
-                className={cn("flex items-center gap-3 px-4 py-3.5", i === cursor && "bg-accent/70")}
-                aria-current={i === cursor ? "true" : undefined}
-              >
-                {tab === "needs_approval" &&
-                  (canQuickApprove(item) ? (
-                    <Checkbox checked={selected.has(item.id)} onCheckedChange={() => toggle(item.id)} aria-label={`Select: ${item.summary}`} />
-                  ) : (
-                    <span className="size-4 shrink-0" aria-hidden />
-                  ))}
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => {
-                    setCursor(i);
-                    setOpenId(item.id);
-                  }}
+        <div className="grid gap-2">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label={label.label}>
+            <AnimatePresence initial={false}>
+              {visible.map((item, i) => (
+                <motion.li
+                  key={item.id}
+                  layout={!reduce}
+                  initial={reduce ? false : { opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={reduce ? undefined : { opacity: 0, x: 24 }}
+                  transition={{ duration: 0.18 }}
+                  className={cn("flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50", i === cursor && "bg-accent/70")}
+                  aria-current={i === cursor ? "true" : undefined}
                 >
-                  <span className="block text-sm font-medium">{item.summary}</span>
-                  <ItemLine item={item} />
-                </button>
-                <ItemSide item={item} />
-              </motion.li>
-            ))}
-          </AnimatePresence>
-        </ul>
+                  {anySelectable &&
+                    (canQuickApprove(item) ? (
+                      <Checkbox checked={selected.has(item.id)} onCheckedChange={() => toggle(item.id)} aria-label={`Select: ${item.summary}`} />
+                    ) : (
+                      <span className="size-4 shrink-0" aria-hidden />
+                    ))}
+                  <ItemButton
+                    item={item}
+                    onOpen={() => {
+                      setCursor(i);
+                      setOpenId(item.id);
+                    }}
+                  />
+                  <ItemSide item={item} />
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+          {items.length > FIRST_ROWS && (
+            <button type="button" className="justify-self-start text-sm font-medium text-primary hover:underline" aria-expanded={expanded} onClick={() => setAll(!expanded)}>
+              {expanded ? "Show fewer" : `Show all ${items.length}`}
+            </button>
+          )}
+        </div>
       )}
 
       <FocusedPanel open={open !== null} onOpenChange={(o) => !o && close()} title={open?.summary ?? ""} description={open ? describe(open) : undefined}>
@@ -224,7 +294,7 @@ function InboxList({ tab, data, linkedId, onLinkedHandled }: { tab: InboxTab; da
             <DocumentReview id={open.document_id} actionId={open.id} onDone={close} />
           ) : (
             <div className="mx-auto max-w-xl">
-              <ActionConfirmation confirmation={open} onDone={close} />
+              <ActionConfirmation confirmation={open} onDone={close} hideTitle />
             </div>
           ))}
       </FocusedPanel>
@@ -234,49 +304,80 @@ function InboxList({ tab, data, linkedId, onLinkedHandled }: { tab: InboxTab; da
 
 function describe(item: InboxItem): string {
   if (isDocument(item)) return item.reasons[0] ?? "We couldn't finish this one on our own.";
-  return `${item.type_label}, ${item.requested_by}`;
+  return `${item.type_label}, ${item.requested_by}, ${formatRelative(item.decided_at ?? item.created_at)}`;
 }
 
-/** The reason it needs a person, who asked, and when. */
-function ItemLine({ item }: { item: InboxItem }) {
-  if (isDocument(item)) {
+/** The row itself: what it is, and only the warnings worth seeing at a glance. The full reasons show on hover and in the card. */
+function ItemButton({ item, onOpen }: { item: InboxItem; onOpen: () => void }) {
+  const warnings = warningsOf(item);
+  const reasons = isDocument(item) ? item.reasons : item.status === "pending" ? item.reasons : [];
+  return (
+    <button type="button" className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={onOpen} title={reasons.join("\n") || undefined}>
+      <IconTile icon={iconFor(item)} tone={warnings.length > 0 ? "danger" : "neutral"} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium max-sm:line-clamp-2 sm:truncate">{item.summary}</span>
+        <ItemLine item={item} warnings={warnings} />
+      </span>
+    </button>
+  );
+}
+
+/** One quiet line under the title, only when there is something to flag: a warning, a check to make, or how it ended. */
+function ItemLine({ item, warnings }: { item: InboxItem; warnings: string[] }) {
+  if (warnings.length > 0) {
     return (
-      <span className="block truncate text-xs text-muted-foreground">
-        {item.warnings.length > 0 ? item.warnings.map((w) => w.label).join(", ") : (item.reasons[0] ?? "Needs a check")} · {formatRelative(item.created_at)}
+      <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs font-medium text-danger">
+        {warnings.map((w) => (
+          <span key={w} className="inline-flex items-center gap-1">
+            <TriangleAlertIcon className="size-3" aria-hidden />
+            {w}
+          </span>
+        ))}
       </span>
     );
   }
-  const when = item.decided_at ?? item.created_at;
+  if (isDocument(item)) return <span className="mt-0.5 block text-xs text-muted-foreground">Needs a check</span>;
+  if (item.status === "pending") return null;
+  const reason = typeof item.result?.reason === "string" ? item.result.reason : null;
   return (
-    <span className="block truncate text-xs text-muted-foreground">
-      {item.status === "pending" ? (item.reasons[0] ?? item.type_label) : DONE_LABEL[item.status]}
-      {typeof item.result?.reason === "string" && `: ${item.result.reason}`} · {item.requested_by} · {formatRelative(when)}
+    <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <span className={cn("size-1.5 shrink-0 rounded-full", DONE_DOT[item.status])} aria-hidden />
+      <span className="truncate">
+        {DONE_LABEL[item.status]}
+        {reason && `: ${reason}`}
+      </span>
+      <span className="shrink-0">{formatRelative(item.decided_at ?? item.created_at)}</span>
+    </span>
+  );
+}
+
+/** Two-person progress as two marks and "1/2". */
+function ApprovalProgress({ done, required }: { done: number; required: number }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`${done} of ${required} approvals`}>
+      <span className="flex gap-0.5" aria-hidden>
+        {Array.from({ length: required }, (_, i) => (
+          <span key={i} className={cn("h-1.5 w-3 rounded-full", i < done ? "bg-positive" : "bg-muted-foreground/25")} />
+        ))}
+      </span>
+      <span className="sr-only">
+        {done} of {required} approvals
+      </span>
+      <span className="tabular" aria-hidden>
+        {done}/{required}
+      </span>
     </span>
   );
 }
 
 function ItemSide({ item }: { item: InboxItem }) {
   const currency = useCurrentUser().business.currency;
-  if (isDocument(item)) {
-    return item.warnings.length > 0 ? (
-      <Badge variant="danger" className="shrink-0">
-        <TriangleAlertIcon aria-hidden /> {item.warnings.length === 1 ? "Warning" : `${item.warnings.length} warnings`}
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="shrink-0 max-sm:hidden">
-        <FileSearchIcon aria-hidden /> Check
-      </Badge>
-    );
-  }
+  if (isDocument(item)) return null;
   return (
-    <span className="flex shrink-0 items-center gap-3">
-      {item.amount_minor != null && <Money minor={item.amount_minor} currency={currency} className="text-sm max-sm:hidden" />}
-      {item.status === "pending" && item.required_approvals > 1 && (
-        <span className="text-xs text-muted-foreground tabular">
-          {item.approvals.length} of {item.required_approvals} approvals
-        </span>
-      )}
-      {item.can_undo ? <UndoButton action={item} /> : <ApprovalBadge level={item.level} className="max-sm:hidden" />}
+    <span className="flex shrink-0 items-center gap-4">
+      {item.status === "pending" && item.required_approvals > 1 && <ApprovalProgress done={item.approvals.length} required={item.required_approvals} />}
+      {item.amount_minor != null && <Money minor={item.amount_minor} currency={currency} className="w-20 text-right text-sm font-medium max-sm:hidden" />}
+      {item.can_undo && <UndoButton action={item} />}
     </span>
   );
 }

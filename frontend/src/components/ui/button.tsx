@@ -4,14 +4,14 @@ import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-card hover:bg-primary/90",
-        secondary: "border bg-card text-foreground shadow-card hover:bg-accent",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        secondary: "bg-secondary text-foreground hover:bg-[oklch(0.93_0.004_280)] dark:hover:bg-accent",
         ghost: "text-foreground hover:bg-accent",
-        outline: "border bg-transparent hover:bg-accent",
+        outline: "border bg-card hover:bg-accent",
         destructive: "bg-danger text-white hover:bg-danger/90",
         link: "h-auto px-0 text-primary underline-offset-4 hover:underline",
       },
@@ -21,6 +21,7 @@ const buttonVariants = cva(
         lg: "h-10 px-5",
         icon: "size-9",
         "icon-sm": "size-8",
+        xs: "h-7 px-2.5 text-xs",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

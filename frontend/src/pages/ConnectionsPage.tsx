@@ -1,4 +1,4 @@
-import { BookOpenIcon, CopyIcon, CreditCardIcon, InfoIcon, LandmarkIcon, Loader2Icon, MailIcon, PlugIcon, RefreshCwIcon, UnplugIcon, type LucideIcon } from "lucide-react";
+import { BookOpenIcon, ChevronRightIcon, CopyIcon, CreditCardIcon, LandmarkIcon, Loader2Icon, LockIcon, MailIcon, PlugIcon, RefreshCwIcon, UnplugIcon, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -9,7 +9,9 @@ import type { ConnectedAccount, Connection, ConnectionKind, SyncResult } from "@
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView } from "@/components/QueryView";
-import { CardsSkeleton } from "@/components/skeletons";
+import { ListSkeleton } from "@/components/skeletons";
+import { IconTile, InfoPopover, KeyValues, Section, StatStrip } from "@/components/kit";
+import { SidePanel } from "@/components/panels";
 import { EmptyState } from "@/components/states";
 import { StatusDot, type Status } from "@/components/StatusDot";
 import { Button } from "@/components/ui/button";
@@ -67,20 +69,25 @@ export default function ConnectionsPage() {
   const connections = useConnections();
   useQboOutcome();
   return (
-    <div className="grid grid-cols-1 gap-6">
-      <PageHeader title="Connections" description="Where your money information comes from. We only ever read from these, and write to accounting software only after approval." />
+    <div className="grid grid-cols-1 gap-8">
+      <PageHeader
+        title="Connections"
+        actions={
+          <InfoPopover label="What we do with these" title="Read-only, with one exception">
+            <p>We only ever read from these sources. The one thing we write is an update to your accounting software, and only after it's approved.</p>
+          </InfoPopover>
+        }
+      />
       <QueryView
         query={connections}
-        loading={<CardsSkeleton count={4} />}
+        loading={<ListSkeleton rows={4} />}
         empty={<EmptyState icon={PlugIcon} title="No connections yet" description="Connect your bills inbox first. A payment platform, bank account and accounting software are optional." />}
       >
         {(data) => (
           <>
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <ul aria-label="Sources" className="divide-y rounded-xl border bg-card">
               {data.items.map((c) => (
-                <li key={c.kind}>
-                  <ConnectionCard connection={c} />
-                </li>
+                <ConnectionRow key={c.kind} connection={c} />
               ))}
             </ul>
             {data.accounts.length > 0 && <Accounts accounts={data.accounts} />}
@@ -91,11 +98,18 @@ export default function ConnectionsPage() {
   );
 }
 
-function ConnectionCard({ connection: c }: { connection: Connection }) {
+function statusLine(c: Connection): string {
+  if (c.last_sync_at) return `Synced ${formatRelative(c.last_sync_at)}`;
+  return c.status !== "disconnected" ? "Not synced yet" : "Never connected";
+}
+
+/** One source: what it is, whether it's working, and the one thing to do next. The rest opens in a side panel. */
+function ConnectionRow({ connection: c }: { connection: Connection }) {
   const can = useCan();
   const connect = useConnect();
   const sync = useSync();
   const disconnect = useDisconnect();
+  const [details, setDetails] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const Icon = ICONS[c.kind];
   const status = STATUS[c.status] ?? STATUS.disconnected;
@@ -103,7 +117,8 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
   const busy = connect.isPending || sync.isPending || disconnect.isPending;
   const reasonId = `connect-reason-${c.kind}`;
   const isOn = c.status !== "disconnected";
-  const counts = countsSummary(c.counts);
+  const counts = c.counts ? Object.entries(c.counts).filter(([, n]) => typeof n === "number" && n > 0) : [];
+  const tone = c.status === "connected" ? "accent" : c.status === "error" ? "danger" : c.status === "expired" ? "warning" : "neutral";
 
   const done = (verb: string) => (res: SyncResult) => {
     const summary = countsSummary(res.counts);
@@ -114,75 +129,108 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
   const connectButton = (label: string) =>
     c.provider === "quickbooks" && allowed ? (
       // A plain link: the server sends the browser on to Intuit's sign-in page, and Intuit sends it back here
-      <Button size="sm" variant={isOn ? "secondary" : "default"} asChild>
-        <a href="/connect/quickbooks/start">
-          <PlugIcon aria-hidden /> {label}
-        </a>
+      <Button size="sm" asChild>
+        <a href="/connect/quickbooks/start">{label}</a>
       </Button>
     ) : c.provider !== "mailpit" ? (
       <Button
         size="sm"
-        variant={isOn ? "secondary" : "default"}
         disabled={!allowed || busy}
         aria-describedby={allowed ? undefined : reasonId}
         onClick={() => c.provider !== "quickbooks" && c.provider !== "mailpit" && connect.mutate(c.provider, { onSuccess: done("connected"), onError: failed })}
       >
-        {connect.isPending ? <Loader2Icon className="animate-spin" aria-hidden /> : <PlugIcon aria-hidden />} {label}
+        {connect.isPending && <Loader2Icon className="animate-spin" aria-hidden />} {label}
       </Button>
     ) : null;
 
+  // Exactly one next step per source
+  const action = !isOn
+    ? connectButton("Connect")
+    : c.status !== "connected" && !c.required
+      ? connectButton("Reconnect")
+      : (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => sync.mutate(c.provider, { onSuccess: done(c.provider === "mailpit" ? "checked for new emails" : "is up to date"), onError: failed })}
+        >
+          {sync.isPending ? <Loader2Icon className="animate-spin" aria-hidden /> : <RefreshCwIcon aria-hidden />}
+          {c.provider === "mailpit" ? "Check for new emails" : c.status === "error" ? "Try again" : "Sync now"}
+        </Button>
+      );
+
   return (
-    <div className="flex h-full flex-col rounded-xl border bg-card shadow-card">
-      <div className="flex flex-1 gap-4 p-5">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Icon className="size-5 text-muted-foreground" aria-hidden />
-        </span>
-        <div className="grid min-w-0 flex-1 content-start gap-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-            <h2 className="font-semibold">{c.title}</h2>
-            <span className="text-xs text-muted-foreground">{c.provider_label}</span>
-          </div>
-          <p className="text-sm text-muted-foreground">{c.what}</p>
-          <StatusDot status={status.status} label={status.label} showLabel />
-          <p className="text-xs text-muted-foreground">
-            {c.last_sync_at ? `Last synced ${formatRelative(c.last_sync_at)}` : isOn ? "Not synced yet" : "Never connected"}
-            {counts && isOn && ` · ${counts}`}
-          </p>
-          {c.address && <InboxAddress address={c.address} />}
-          {c.error && c.status !== "connected" && (
-            <p role="alert" className="mt-1 rounded-md bg-danger-soft/60 px-2.5 py-1.5 text-sm text-danger">
-              {c.error}
-            </p>
-          )}
-        </div>
+    <li className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 px-4 py-4 sm:grid-cols-[2.5rem_minmax(0,15rem)_minmax(0,1fr)_auto_auto] sm:px-5">
+      <IconTile icon={Icon} tone={tone} className="size-10 [&_svg]:size-5" />
+      <div className="min-w-0">
+        <h2 className="truncate text-sm font-semibold">{c.title}</h2>
+        <p className="truncate text-xs text-muted-foreground">{c.provider_label}</p>
       </div>
-      <div className="grid gap-2 border-t px-5 py-3">
-        <div className="flex flex-wrap gap-2">
-          {!isOn && connectButton("Connect")}
-          {isOn && (
-            <Button
-              size="sm"
-              variant={c.status === "connected" ? "secondary" : "default"}
-              disabled={busy}
-              onClick={() => sync.mutate(c.provider, { onSuccess: done(c.provider === "mailpit" ? "checked for new emails" : "is up to date"), onError: failed })}
-            >
-              {sync.isPending ? <Loader2Icon className="animate-spin" aria-hidden /> : <RefreshCwIcon aria-hidden />}
-              {c.provider === "mailpit" ? "Check for new emails" : c.status === "error" ? "Try again" : "Sync now"}
-            </Button>
-          )}
-          {isOn && c.status !== "connected" && !c.required && connectButton("Reconnect")}
-          {isOn && !c.required && (
-            <Button size="sm" variant="ghost" disabled={!allowed || busy} aria-describedby={allowed ? undefined : reasonId} onClick={() => setConfirming(true)}>
-              <UnplugIcon aria-hidden /> Disconnect
-            </Button>
-          )}
-        </div>
-        {!allowed && !c.required && (
-          <p id={reasonId} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <InfoIcon className="size-3.5 shrink-0" aria-hidden /> Only a business owner or finance manager can connect or disconnect.
+      <div className="col-start-2 grid min-w-0 gap-1 sm:col-start-auto">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <StatusDot status={status.status} label={status.label} showLabel={c.status !== "connected"} className="text-sm" />
+          <span className="text-sm text-muted-foreground">{statusLine(c)}</span>
+        </span>
+        {c.address && <InboxAddress address={c.address} />}
+        {c.error && c.status !== "connected" && (
+          <p role="alert" className="truncate text-xs text-danger" title={c.error}>
+            {c.error}
           </p>
         )}
       </div>
+      <div className="col-start-2 flex items-center gap-1 sm:col-start-auto sm:justify-end">
+        {action}
+        <Button variant="ghost" size="sm" className="text-muted-foreground sm:hidden" onClick={() => setDetails(true)}>
+          Details
+        </Button>
+        {!allowed && !c.required && (
+          <span title="Only a business owner or finance manager can connect or disconnect." className="text-muted-foreground">
+            <LockIcon className="size-3.5" aria-hidden />
+            <span id={reasonId} className="sr-only">
+              Only a business owner or finance manager can connect or disconnect.
+            </span>
+          </span>
+        )}
+      </div>
+      <Button variant="ghost" size="icon-sm" className="max-sm:hidden" aria-label={`${c.title} details`} onClick={() => setDetails(true)}>
+        <ChevronRightIcon aria-hidden />
+      </Button>
+
+      <SidePanel open={details} onOpenChange={setDetails} title={c.title} description={c.provider_label}>
+        <div className="grid gap-6">
+          <div className="flex items-center gap-3">
+            <IconTile icon={Icon} tone={tone} className="size-10 [&_svg]:size-5" />
+            <div className="grid gap-0.5">
+              <StatusDot status={status.status} label={status.label} showLabel />
+              <span className="text-xs text-muted-foreground">{statusLine(c)}</span>
+            </div>
+          </div>
+          <KeyValues
+            items={[
+              { label: "What we read", value: c.what },
+              { label: "Required", value: c.required ? "Yes" : "No, optional" },
+            ]}
+          />
+          {counts.length > 0 && isOn && (
+            <StatStrip items={counts.slice(0, 4).map(([k, n]) => ({ label: capitalise(k.replace(/_/g, " ")), value: n.toLocaleString("en-GB") }))} />
+          )}
+          {c.error && c.status !== "connected" && <p className="rounded-lg bg-danger-soft/50 px-3 py-2 text-sm text-danger">{c.error}</p>}
+          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+            {action}
+            {isOn && !c.required && (
+              <Button size="sm" variant="ghost" disabled={!allowed || busy} aria-describedby={allowed ? undefined : reasonId} onClick={() => setConfirming(true)}>
+                <UnplugIcon aria-hidden /> Disconnect
+              </Button>
+            )}
+          </div>
+          {!allowed && !c.required && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <LockIcon className="size-3.5 shrink-0" aria-hidden /> Only a business owner or finance manager can connect or disconnect.
+            </p>
+          )}
+        </div>
+      </SidePanel>
 
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
@@ -203,6 +251,7 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
                 disconnect.mutate(c.provider, {
                   onSuccess: () => {
                     setConfirming(false);
+                    setDetails(false);
                     toast(`${c.title} disconnected.`);
                   },
                   onError: failed,
@@ -215,20 +264,22 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </li>
   );
 }
 
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function InboxAddress({ address }: { address: string }) {
   return (
-    <div className="mt-1 grid min-w-0 gap-0.5 text-sm">
-      <span className="text-xs text-muted-foreground">Forward bills to</span>
-      <span className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1 text-xs">
+      <span className="shrink-0 text-muted-foreground">Forward bills to</span>
+      <span className="flex min-w-0 items-center">
         <span className="truncate font-medium">{address}</span>
         <Button
           variant="ghost"
           size="icon-sm"
-          className="size-7"
+          className="size-6"
           aria-label="Copy the bills inbox address"
           onClick={() =>
             void navigator.clipboard?.writeText(address).then(
@@ -247,24 +298,22 @@ function InboxAddress({ address }: { address: string }) {
 function Accounts({ accounts }: { accounts: ConnectedAccount[] }) {
   const currency = useCurrentUser().business.currency;
   return (
-    <section aria-labelledby="accounts-heading" className="grid gap-3">
-      <h2 id="accounts-heading" className="text-sm font-medium">
-        Balances we read
-      </h2>
-      <ul className="divide-y rounded-xl border bg-card shadow-card">
+    <Section className="grid-cols-1" title="Balances we read" aside={accounts.length > 1 ? accounts.length : undefined}>
+      <ul aria-label="Balances we read" className="divide-y rounded-xl border bg-card">
         {accounts.map((a) => (
-          <li key={a.id} className="flex items-center gap-3 px-4 py-3">
+          <li key={a.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+            <IconTile icon={a.source === "stripe" ? CreditCardIcon : LandmarkIcon} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">
                 {a.name}
-                {a.mask && <span className="text-muted-foreground"> ending {a.mask}</span>}
+                {a.mask && <span className="font-normal text-muted-foreground"> ••{a.mask}</span>}
               </p>
               <p className="text-xs text-muted-foreground">As of {formatRelative(a.as_of)}</p>
             </div>
-            <Money minor={a.balance_minor} currency={a.currency || currency} className="text-sm font-medium" />
+            <Money minor={a.balance_minor} currency={a.currency || currency} className="text-sm font-semibold" />
           </li>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }

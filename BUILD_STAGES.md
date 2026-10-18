@@ -228,7 +228,7 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 | F3 | Inbox, documents review, activity, connections | 0, 2–5 | Done |
 | F4 | Home, cash flow, business health | 6 | Done |
 | F5 | Recommendations, financing, Ask (chat) | 7 | Done |
-| F6 | Interaction features and end-to-end journeys | All | Search, shortcuts and journeys done; the rest to do |
+| F6 | Interaction features and end-to-end journeys | All | Search, shortcuts, journeys and design pass done; the rest to do |
 
 ### F1: Setup, design tokens, app shell, sign-in
 
@@ -295,4 +295,17 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 - Bugs found by the journeys:
   - `?` never opened the shortcuts dialog (it listened for "?" without Shift);
   - on a new business, the run after an upload and "Check now" both added the same new recommendations, so "Check now" failed.
+- Design pass on every screen, modelled on a leading business bank's demo:
+  - Light by default (dark stays a choice in Settings).
+  - Flat sections in place of boxed cards.
+  - Each page opens on its headline numbers, at most one chart and the next step. Explanations, AI paragraphs, evidence and long lists sit behind a click, a fold, a pop-up or a side panel.
+  - Charts are used only where they answer better than a number:
+    - lines for cash over time;
+    - bars for profit by month;
+    - a donut for spending by category;
+    - share bars for suppliers and customers.
+  - Shared building blocks in `components/kit.tsx`.
+  - Rows with a fraud warning can no longer be bulk-approved or approved with a single key; they always open the full approval card.
+  - Charts no longer animate in, which could leave them empty in a background tab.
+  - Tests: 14 new frontend tests; 174 frontend tests and all 7 journeys pass.
 - Still to do: swipe review on phones, show your work (click a number to open its source), phone handoff polish, Today briefing read aloud, reduce-motion check, accessibility pass.

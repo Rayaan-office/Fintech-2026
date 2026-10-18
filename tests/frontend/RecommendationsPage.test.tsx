@@ -34,33 +34,67 @@ function setup({ me = owner, items = [recommendation(), bankDetailsRec], path = 
 }
 
 const cardFor = async (title: string) => (await screen.findByRole("listitem", { name: title })) as HTMLElement;
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Rows open the side panel; the row's own button is named after its title. */
+async function openCard(title: string) {
+  await userEvent.click(within(await cardFor(title)).getByRole("button", { name: new RegExp(`^${escapeRe(title)}`) }));
+  return screen.findByRole("dialog", { name: title });
+}
 const bodyOf = (init: RequestInit | undefined) => JSON.parse(String(init?.body ?? "null"));
 
 describe("Recommendations", () => {
-  it("shows each card with its severity, money at stake and the AI label with what the AI saw", async () => {
+  it("leads with the money at stake, split by severity", async () => {
+    setup();
+    const overview = await screen.findByRole("region", { name: "Overview" });
+    expect(overview).toHaveTextContent("At stake£1,476.00");
+    expect(overview).toHaveTextContent("Across 2 recommendations");
+    expect(within(overview).getByRole("img", { name: "At stake by severity: Urgent £504.00, Worth a look £972.00" })).toBeInTheDocument();
+    expect(overview).toHaveTextContent("Urgent1£504.00");
+  });
+
+  it("shows each row with its kind, severity and money at stake, and the AI's words in the panel", async () => {
     setup();
     const price = await cardFor("Acme Supplies is charging 18% more");
     expect(price).toHaveTextContent("Price rise");
     expect(price).toHaveTextContent("Worth a look");
     expect(price).toHaveTextContent("£972.00");
-    expect(within(price).getByText("Checked against your records")).toBeInTheDocument();
-    await userEvent.click(within(price).getByRole("button", { name: "What the AI saw" }));
-    expect(within(price).getByTestId("ai-saw")).toHaveTextContent("supplier: [SUPPLIER_1]");
-
-    // Our own template, not the AI's words: no AI label
-    const bank = await cardFor("Northern Packaging's bank details changed");
-    expect(bank).toHaveTextContent("Urgent");
-    expect(within(bank).queryByText("Checked against your records")).not.toBeInTheDocument();
+    // The paragraph and what the AI saw sit behind the row, not on the page
+    expect(within(price).queryByText("Checked against your records")).not.toBeInTheDocument();
+    const panel = await openCard("Acme Supplies is charging 18% more");
+    expect(within(panel).getByText("Checked against your records")).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole("button", { name: "What the AI saw" }));
+    expect(within(panel).getByTestId("ai-saw")).toHaveTextContent("supplier: [SUPPLIER_1]");
+    expect(within(panel).getByRole("button", { name: "Why am I seeing this?" })).toBeInTheDocument();
   });
 
-  it("shows the evidence before and after in the side panel", async () => {
+  it("keeps the urgent row's next step on the row, and says it with no AI label when it is our own wording", async () => {
     setup();
-    await userEvent.click(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: "See before and after" }));
-    const panel = await screen.findByRole("dialog", { name: "Acme Supplies is charging 18% more" });
+    const bank = await cardFor("Northern Packaging's bank details changed");
+    expect(bank).toHaveTextContent("Urgent");
+    expect(bank).toHaveTextContent("Bank details changed");
+    expect(within(bank).getByRole("button", { name: /using the email on record/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")[0]).toBe(bank);
+    const panel = await openCard("Northern Packaging's bank details changed");
+    expect(within(panel).queryByText("Checked against your records")).not.toBeInTheDocument();
+  });
+
+  it("shows the evidence before and after in the side panel, with the change", async () => {
+    setup();
+    const panel = await openCard("Acme Supplies is charging 18% more");
     const table = within(panel).getByRole("region", { name: "Before and after" });
     const flour = within(table).getByRole("row", { name: /Flour 25kg/ });
     expect(flour).toHaveTextContent("£45.00");
     expect(flour).toHaveTextContent("£53.10");
+    expect(flour).toHaveTextContent("+18%");
+  });
+
+  it("shows the first five rows and the rest on request", async () => {
+    const many = Array.from({ length: 7 }, (_, i) => recommendation({ id: `m${i}`, title: `Recommendation number ${i + 1}` }));
+    setup({ items: many });
+    await cardFor("Recommendation number 1");
+    expect(screen.queryByRole("listitem", { name: "Recommendation number 6" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show all 7" }));
+    expect(await screen.findByRole("listitem", { name: "Recommendation number 7" })).toBeInTheDocument();
   });
 
   it("drafts the email and opens its confirmation card, which can be approved there", async () => {
@@ -87,7 +121,8 @@ describe("Recommendations", () => {
 
   it("dismisses changed bank details without muting, with no option to mute", async () => {
     const { calls } = setup();
-    await userEvent.click(within(await cardFor("Northern Packaging's bank details changed")).getByRole("button", { name: "Dismiss" }));
+    const panel = await openCard("Northern Packaging's bank details changed");
+    await userEvent.click(within(panel).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(calls.find((c) => c.path === "/api/recommendations/r2/dismiss")).toBeTruthy());
     expect(bodyOf(calls.find((c) => c.path === "/api/recommendations/r2/dismiss")!.init)).toEqual({ mute: false });
     expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
@@ -95,7 +130,8 @@ describe("Recommendations", () => {
 
   it("can stop a kind of recommendation for one supplier", async () => {
     const { calls } = setup();
-    await userEvent.click(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: /Dismiss/ }));
+    const panel = await openCard("Acme Supplies is charging 18% more");
+    await userEvent.click(within(panel).getByRole("button", { name: /Dismiss/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /Don't show this kind again for Acme Supplies/ }));
     await waitFor(() => expect(calls.find((c) => c.path === "/api/recommendations/r1/dismiss")).toBeTruthy());
     expect(bodyOf(calls.find((c) => c.path === "/api/recommendations/r1/dismiss")!.init)).toEqual({ mute: true });

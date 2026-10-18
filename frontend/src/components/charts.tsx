@@ -29,7 +29,7 @@ type CashChartProps = {
   series: ForecastPoint[];
   currency?: string;
   height?: number;
-  /** Small version for the home page: no axes or grid. */
+  /** Small version for the home page: no axes or grid, still a tooltip on hover. */
   compact?: boolean;
   safetyLevelMinor?: number;
   lowest?: { date: string; balance_minor: number };
@@ -80,36 +80,35 @@ export function CashAreaChart({ series, currency = "GBP", height = 260, compact 
           width={56}
           tickFormatter={(v: number) => (hidden ? "••••" : formatMoneyCompact(v, currency))}
         />
-        {!compact && (
-          <Tooltip
-            cursor={{ stroke: "var(--border)" }}
-            content={({ active, payload, label }) => {
-              const point = payload?.[0]?.payload as (typeof data)[number] | undefined;
-              if (!active || !point) return null;
-              const bills = billsOn.get(point.date) ?? [];
-              return (
-                <ChartTooltip title={formatDate(String(label), true)}>
-                  <Row label="Expected">
-                    <Money minor={point.expected_minor} currency={currency} />
+        <Tooltip
+          cursor={{ stroke: "var(--border)" }}
+          content={({ active, payload, label }) => {
+            const point = payload?.[0]?.payload as (typeof data)[number] | undefined;
+            if (!active || !point) return null;
+            const bills = billsOn.get(point.date) ?? [];
+            return (
+              <ChartTooltip title={formatDate(String(label), true)}>
+                <Row label="Expected">
+                  <Money minor={point.expected_minor} currency={currency} />
+                </Row>
+                {point.before_minor !== undefined && point.before_minor !== point.expected_minor && (
+                  <Row label="Before your changes">
+                    <Money minor={point.before_minor} currency={currency} />
                   </Row>
-                  {point.before_minor !== undefined && point.before_minor !== point.expected_minor && (
-                    <Row label="Before your changes">
-                      <Money minor={point.before_minor} currency={currency} />
-                    </Row>
-                  )}
-                  <Row label="Best to worst">
-                    <Money minor={point.best_minor} currency={currency} /> – <Money minor={point.worst_minor} currency={currency} />
+                )}
+                <Row label="Best to worst">
+                  <Money minor={point.best_minor} currency={currency} /> – <Money minor={point.worst_minor} currency={currency} />
+                </Row>
+                {bills.slice(0, 3).map((b) => (
+                  <Row key={b.id} label={b.label}>
+                    <Money minor={b.amount_minor} currency={currency} direction="out" />
                   </Row>
-                  {bills.map((b) => (
-                    <Row key={b.id} label={b.label}>
-                      <Money minor={b.amount_minor} currency={currency} direction="out" />
-                    </Row>
-                  ))}
-                </ChartTooltip>
-              );
-            }}
-          />
-        )}
+                ))}
+                {bills.length > 3 && <div className="text-muted-foreground">and {bills.length - 3} more going out</div>}
+              </ChartTooltip>
+            );
+          }}
+        />
         <Area dataKey="band" stroke="none" fill="var(--chart-band)" isAnimationActive={false} activeDot={false} />
         {before && (
           <Area dataKey="before_minor" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="3 3" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
@@ -149,7 +148,15 @@ export function CashAreaChart({ series, currency = "GBP", height = 260, compact 
           );
         })}
         {lowest && (
-          <ReferenceDot x={lowest.date} y={lowest.balance_minor} r={5} fill="var(--primary)" stroke="var(--card)" strokeWidth={2} />
+          <ReferenceDot
+            x={lowest.date}
+            y={lowest.balance_minor}
+            r={5}
+            fill="var(--primary)"
+            stroke="var(--card)"
+            strokeWidth={2}
+            label={compact ? undefined : { value: "Lowest", position: "bottom", offset: 10, ...axis, fill: "var(--foreground)", fontWeight: 500 }}
+          />
         )}
       </AreaChart>
     </ResponsiveContainer>
@@ -174,7 +181,6 @@ export function CategoryBarChart({
   horizontal?: boolean;
 }) {
   const { hidden } = usePrivacy();
-  const animate = !useReducedMotion();
   const money = (v: number) => (hidden ? "••••" : formatMoneyCompact(v, currency));
   const tooltip = (
     <Tooltip
@@ -207,7 +213,7 @@ export function CategoryBarChart({
             tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
           />
           {tooltip}
-          <Bar dataKey={valueKey} fill="var(--primary)" radius={[0, 4, 4, 0]} maxBarSize={22} isAnimationActive={animate} animationDuration={300} />
+          <Bar dataKey={valueKey} fill="var(--primary)" radius={[0, 4, 4, 0]} maxBarSize={22} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     );
@@ -220,7 +226,7 @@ export function CategoryBarChart({
         <YAxis tick={axis} tickLine={false} axisLine={false} width={56} tickFormatter={money} />
         <ReferenceLine y={0} stroke="var(--border)" />
         {tooltip}
-        <Bar dataKey={valueKey} fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={animate} animationDuration={300} />
+        <Bar dataKey={valueKey} fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   );

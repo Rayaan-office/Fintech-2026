@@ -39,14 +39,14 @@ function setup({ me = owner, path = "/connections", cards = CARDS }: { me?: Me; 
   return { ...api, ...renderApp(path) };
 }
 
-const cardFor = async (title: string) => (await screen.findByRole("heading", { name: title })).closest<HTMLElement>(".rounded-xl")!;
+const cardFor = async (title: string) => (await screen.findByRole("heading", { name: title })).closest<HTMLElement>("li")!;
 
 describe("Connections", () => {
   it("shows each tool's status, last sync and the API's last error", async () => {
     setup();
     const email = await cardFor("Email inbox");
     expect(email).toHaveTextContent("Connected");
-    expect(email).toHaveTextContent("Last synced 5 minutes ago");
+    expect(email).toHaveTextContent("Synced 5 minutes ago");
     expect(email).toHaveTextContent("bills@demo-bakery.example");
     expect(within(email).queryByRole("button", { name: /Disconnect/ })).not.toBeInTheDocument();
 
@@ -81,9 +81,21 @@ describe("Connections", () => {
     expect(await screen.findByText("We couldn't reach QuickBooks sandbox (UK). Try again in a minute.")).toBeInTheDocument();
   });
 
+  it("keeps the details and Disconnect in a side panel", async () => {
+    setup();
+    const accounting = await cardFor("Accounting software");
+    expect(within(accounting).queryByRole("button", { name: /Disconnect/ })).not.toBeInTheDocument();
+    await userEvent.click(within(accounting).getByRole("button", { name: "Accounting software details" }));
+    const panel = await screen.findByRole("dialog", { name: "Accounting software" });
+    expect(panel).toHaveTextContent("The official books");
+    expect(panel).toHaveTextContent("117");
+    expect(within(panel).getByRole("button", { name: /Disconnect/ })).toBeInTheDocument();
+  });
+
   it("asks before disconnecting", async () => {
     const { calls } = setup();
-    await userEvent.click(within(await cardFor("Accounting software")).getByRole("button", { name: "Disconnect" }));
+    await userEvent.click(within(await cardFor("Accounting software")).getByRole("button", { name: "Accounting software details" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Accounting software" })).getByRole("button", { name: "Disconnect" }));
     const dialog = await screen.findByRole("dialog", { name: "Disconnect accounting software?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/connections/quickbooks/disconnect")).toBe(true));
