@@ -161,6 +161,7 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | Fake invoice or changed bank details | Money paid to a fraudster | Fraud warnings; two-person approval for bank changes and large payments | A well-crafted fraud from a real supplier's hacked email |
 | Forged notification | Fake payment recorded | Signature check on every notification | — |
 | Stolen connection key | Data read by an attacker | Read-only keys, encrypted storage, regular rotation | Read exposure until the key is revoked |
+| Someone else sees a phone upload link | They send files to the business | The QR code's link is long and random, stored only as a fingerprint, works for 10 minutes and up to 10 files, and only adds documents: each file gets the same safety checks, is logged, and still needs approval like any upload | Unwanted files until the link expires |
 | Staff misuse | Unauthorised changes | Roles, approval levels, two-person rule, permanent log | Collusion between two approvers |
 | One business sees another's data | Data leak | Database-level separation | — |
 | AI provider down or changes policy | Processing stops | Only providers that don't keep or train on data are allowed; OpenRouter switches between them; work queues and resumes; requests fail safe | Delays during outages |

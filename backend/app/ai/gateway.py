@@ -168,7 +168,7 @@ def complete_json(business_id, purpose: str, instructions: str, data_text: str, 
     }
     headers = {
         "Authorization": f"Bearer {_s.openrouter_api_key.get_secret_value()}",
-        "X-Title": "SME Finance Copilot",
+        "X-Title": "Cocent",
     }
     for attempt in (1, 2):
         started = time.monotonic()

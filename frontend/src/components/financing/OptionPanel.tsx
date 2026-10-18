@@ -118,9 +118,14 @@ function QuoteView({ q, without, safetyLevelMinor, currency, stale }: { q: Quote
           <dd className="mt-0.5 text-2xl font-semibold tracking-tight">{q.monthly_repayment_minor ? <Money minor={q.monthly_repayment_minor} currency={currency} /> : "Nothing"}</dd>
           {q.yearly_cost_pct !== null && <dd className="text-xs text-muted-foreground">About {q.yearly_cost_pct}% a year</dd>}
         </div>
-        {q.fee_minor > 0 && (
-          <div className="col-span-2 text-xs text-muted-foreground">
-            Includes a fee of <Money minor={q.fee_minor} currency={currency} />.
+        {(q.fee_minor > 0 || q.arrives_on) && (
+          <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {q.arrives_on && <span>Money arrives {formatDate(q.arrives_on)}</span>}
+            {q.fee_minor > 0 && (
+              <span>
+                Includes a fee of <Money minor={q.fee_minor} currency={currency} />
+              </span>
+            )}
           </div>
         )}
       </dl>

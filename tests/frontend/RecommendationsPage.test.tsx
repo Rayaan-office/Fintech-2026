@@ -72,7 +72,11 @@ describe("Recommendations", () => {
     const bank = await cardFor("Northern Packaging's bank details changed");
     expect(bank).toHaveTextContent("Urgent");
     expect(bank).toHaveTextContent("Bank details changed");
-    expect(within(bank).getByRole("button", { name: /using the email on record/ })).toBeInTheDocument();
+    // A short button on the row; the step itself reads in the card it opens
+    expect(within(bank).queryByRole("button", { name: /using the email on record/ })).not.toBeInTheDocument();
+    await userEvent.click(within(bank).getByRole("button", { name: "Take action: Northern Packaging's bank details changed" }));
+    expect(await screen.findByText(/using the email on record/)).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
     expect(screen.getAllByRole("listitem")[0]).toBe(bank);
     const panel = await openCard("Northern Packaging's bank details changed");
     expect(within(panel).queryByText("Checked against your records")).not.toBeInTheDocument();
@@ -99,7 +103,11 @@ describe("Recommendations", () => {
 
   it("drafts the email and opens its confirmation card, which can be approved there", async () => {
     const { calls } = setup();
-    await userEvent.click(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: "Draft an email to Acme Supplies about the increase" }));
+    await userEvent.click(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: /^Take action/ }));
+    expect(await screen.findByText("Draft an email to Acme Supplies about the increase")).toBeInTheDocument();
+    expect(screen.getByText("Nothing is sent until someone approves the draft.")).toBeInTheDocument();
+    expect(calls.some((c) => c.path.endsWith("/next-step"))).toBe(false); // nothing until confirmed
+    await userEvent.click(screen.getByRole("button", { name: "Draft email" }));
     const card = await screen.findByRole("region", { name: "Confirm: Email Acme Supplies: Your recent price change" });
     expect(card).toHaveTextContent("Send this email to accounts@acme.example");
     expect(card).toHaveTextContent("The AI drafted this email; check the wording.");
@@ -115,7 +123,7 @@ describe("Recommendations", () => {
         recommendation({ id: "r3", title: "Hill Farm Shop pays late", type: "slow_payer", next_step: { label: "Draft a payment reminder", kind: "send_payment_reminder", href: null, can_draft: false, action: { id: "a8", status: "executed" }, related_action_ids: [] } }),
       ],
     });
-    expect(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: /Open the draft email/ })).toBeInTheDocument();
+    expect(within(await cardFor("Acme Supplies is charging 18% more")).getByRole("button", { name: /^Open draft/ })).toBeInTheDocument();
     expect(await cardFor("Hill Farm Shop pays late")).toHaveTextContent("Email sent");
   });
 

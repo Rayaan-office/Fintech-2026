@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Logo, PRODUCT } from "@/components/brand";
 import { cn } from "@/lib/utils";
 import { NAV_GROUPS, visibleNav, type NavItem } from "./nav";
 
@@ -98,8 +99,8 @@ export function BrandMark({ name }: { name: string }) {
   );
 }
 
-/** The business at the top of the sidebar, like a bank's account switcher: one business today. */
-export function BusinessMenu({ onNavigate }: { onNavigate?: () => void }) {
+/** The business, like a bank's account switcher, beside the search in the top bar: one business today. */
+export function BusinessMenu({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
   const me = useCurrentUser();
   const can = useCan();
   const navigate = useNavigate();
@@ -113,7 +114,10 @@ export function BusinessMenu({ onNavigate }: { onNavigate?: () => void }) {
         <button
           type="button"
           aria-label={`Business: ${me.business.name}`}
-          className="flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left transition-colors hover:bg-accent data-[state=open]:bg-accent"
+          className={cn(
+            "flex h-10 min-w-0 max-w-60 shrink-0 items-center gap-2.5 rounded-full py-1 pl-1.5 pr-3 text-left transition-colors hover:bg-accent data-[state=open]:bg-accent",
+            className,
+          )}
         >
           <BusinessTile name={me.business.name} />
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">{me.business.name}</span>
@@ -125,7 +129,7 @@ export function BusinessMenu({ onNavigate }: { onNavigate?: () => void }) {
           <BusinessTile name={me.business.name} className="size-8" />
           <span className="min-w-0">
             <span className="block truncate font-medium">{me.business.name}</span>
-            <span className="block text-xs font-normal text-muted-foreground">Finance Copilot</span>
+            <span className="block text-xs font-normal text-muted-foreground">{PRODUCT}</span>
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -144,9 +148,12 @@ export function BusinessMenu({ onNavigate }: { onNavigate?: () => void }) {
 
 export function Sidebar({ inboxCount }: { inboxCount?: number }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border/60 bg-sidebar px-3 pb-4 pt-3 md:flex">
-      <BusinessMenu />
-      <div className="mt-4 flex flex-1 flex-col overflow-y-auto">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border/60 bg-sidebar px-3 pb-4 md:flex">
+      {/* Level with the top bar, so the logo and the business beside the search read as one line */}
+      <div className="flex h-16 shrink-0 items-center px-2.5">
+        <Logo markClassName="size-6" />
+      </div>
+      <div className="flex flex-1 flex-col overflow-y-auto">
         <NavList inboxCount={inboxCount} />
       </div>
     </aside>

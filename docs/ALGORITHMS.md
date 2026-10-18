@@ -262,7 +262,7 @@ For each person we count the questions answered from our records, and how many o
 
 ## 13. Learning from decisions
 
-The copilot learns from two things people already do: correcting what was read from a document, and acting on or turning down a recommendation. What it learns stays in our database. Nothing extra is sent to the AI, and learning never approves anything by itself.
+Cocent learns from two things people already do: correcting what was read from a document, and acting on or turning down a recommendation. What it learns stays in our database. Nothing extra is sent to the AI, and learning never approves anything by itself.
 
 ### Remembering corrections
 

@@ -1,4 +1,4 @@
-"""SME Finance Copilot API."""
+"""Cocent API: every cent, with your consent."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import handlers, scheduler  # noqa: F401  (handlers registers what approved actions do)
 from .api import activity, advice, assistant, auth, connections, documents, inbox, insights, webhooks
 from .api import learning as learning_api
-from .api import payments, search
+from .api import handoff, payments, search
 from .config import get_settings
 from .security.http import SecurityHeadersMiddleware
 
@@ -27,7 +27,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="SME Finance Copilot API",
+    title="Cocent API",
     lifespan=lifespan,
     version="1",
     # The developer documentation page exists only in development
@@ -73,3 +73,4 @@ app.include_router(webhooks.router)
 app.include_router(learning_api.router)
 app.include_router(payments.router)
 app.include_router(search.router)
+app.include_router(handoff.router)

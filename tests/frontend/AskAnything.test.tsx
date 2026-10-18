@@ -56,10 +56,11 @@ const bodyOf = (init: RequestInit | undefined) => JSON.parse(String(init?.body ?
 async function askExample(topic: string, chip: string) {
   await userEvent.click(await screen.findByRole("tab", { name: topic }));
   await userEvent.click(await screen.findByRole("button", { name: chip }));
+  await userEvent.click(screen.getByRole("button", { name: "Send question" }));
 }
 
 describe("Ask anything", () => {
-  it("offers short example questions by topic, and sends the full question", async () => {
+  it("offers short example questions by topic, and puts the full question in the box to send", async () => {
     const { calls } = setup();
     // Cash is the first topic; the others are a tab away
     expect(within(await screen.findByRole("group", { name: "Cash questions" })).getByRole("button", { name: "Cash next month" })).toBeInTheDocument();
@@ -67,6 +68,10 @@ describe("Ask anything", () => {
     expect(within(await screen.findByRole("group", { name: "Suppliers questions" })).getByRole("button", { name: "Spend by category" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "Documents" }));
     await userEvent.click(within(await screen.findByRole("group", { name: "Documents questions" })).getByRole("button", { name: "Late payment fees" }));
+    // Clicking a chip only fills the box: the person can edit it, then send
+    expect(screen.getByLabelText("Ask a question")).toHaveValue("Which supplier mentions late payment fees?");
+    expect(calls.some((c) => c.path === "/api/ask")).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Send question" }));
     expect(await screen.findByText(/charges a late payment fee/)).toBeInTheDocument();
     expect(bodyOf(calls.find((c) => c.path === "/api/ask")!.init)).toEqual({ question: "Which supplier mentions late payment fees?" });
     // The examples give way to the conversation

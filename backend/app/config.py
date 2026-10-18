@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_base_url: str = "http://localhost:5173"
     api_base_url: str = "http://localhost:8000"
+    # Where a phone opens the upload page from the QR code. Empty: the app's address, or in
+    # development this computer's address on the Wi-Fi, since a phone can't reach "localhost"
+    handoff_base_url: str | None = None
 
     session_secret: SecretStr
     pii_vault_key: SecretStr

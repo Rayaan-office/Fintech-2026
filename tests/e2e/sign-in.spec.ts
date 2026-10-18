@@ -10,7 +10,7 @@ test("a bookkeeper signs in without two-step and sees the app shell", async ({ p
 
   await expect(page).toHaveURL(/\/$/);
   const menu = page.getByRole("navigation", { name: "Main" }).first();
-  for (const label of ["Home", "Inbox", "Ask", "Cash flow", "Business health", "Documents", "Activity"]) {
+  for (const label of ["Home", "Inbox", "Recommendations", "Ask", "Cash flow", "Business health", "Documents", "Activity"]) {
     await expect(menu.getByRole("link", { name: label })).toBeVisible();
   }
   // Financing tools are for owners and finance managers

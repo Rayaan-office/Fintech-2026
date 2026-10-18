@@ -11,6 +11,11 @@ export const BOOKS = "books@e2e-bakery.test";
 export const STAFF = "staff@e2e-bakery.test";
 export const file = (name: string) => path.join(here, ".data", name);
 
+// The journeys use the real AI, whose replies can take a couple of minutes on a busy day. Waits for an
+// AI result get this long, and the tests that make several AI calls get a longer overall limit.
+export const AI_WAIT = 180_000;
+export const AI_TEST = 420_000;
+
 // Written by seed.py; never committed and never printed
 function password(email: string): string {
   const creds = JSON.parse(readFileSync(path.join(here, "e2e-credentials.local.json"), "utf8")) as Record<string, string>;

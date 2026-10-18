@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { BOOKS, file, OWNER, signIn, signOut } from "./helpers";
+import { AI_TEST, AI_WAIT, BOOKS, file, OWNER, signIn, signOut } from "./helpers";
 
 // The journeys share one fresh business and run in order: the bill approved here gives Acme's bank
 // details on record, which the fraud drill then changes.
-test.describe.configure({ mode: "serial" });
+test.describe.configure({ mode: "serial", timeout: AI_TEST });
 
 test("a bookkeeper uploads a bill and an owner approves it", async ({ page }) => {
   await signIn(page, BOOKS);
@@ -14,7 +14,7 @@ test("a bookkeeper uploads a bill and an owner approves it", async ({ page }) =>
   // Read by the AI in the background, then waiting for a person
   const row = page.getByRole("row", { name: /acme-bill\.pdf/ });
   await expect(row).toBeVisible();
-  await expect(row).toContainText(/Acme Supplies/, { timeout: 90_000 });
+  await expect(row).toContainText(/Acme Supplies/, { timeout: AI_WAIT });
   await signOut(page);
 
   await signIn(page, OWNER);
@@ -45,7 +45,7 @@ test("fraud drill: a bill with new bank details is stopped and flagged", async (
   await page.goto("/documents?upload=1");
   await page.getByTestId("file-input").setInputFiles(file("acme-new-bank.pdf"));
   await expect(page.getByText("acme-new-bank.pdf received")).toBeVisible();
-  await expect(page.getByRole("row", { name: /acme-new-bank\.pdf/ })).toContainText(/Acme Supplies/, { timeout: 90_000 });
+  await expect(page.getByRole("row", { name: /acme-new-bank\.pdf/ })).toContainText(/Acme Supplies/, { timeout: AI_WAIT });
   await signOut(page);
 
   await signIn(page, OWNER);
@@ -63,8 +63,10 @@ test("fraud drill: a bill with new bank details is stopped and flagged", async (
   await page.getByRole("button", { name: /Check now/ }).click();
   // Matched by its fixed label: the title is worded by the AI
   const first = page.getByRole("main").getByRole("listitem").first();
-  await expect(first).toContainText("Bank details changed", { timeout: 90_000 });
+  await expect(first).toContainText("Bank details changed", { timeout: AI_WAIT });
   await expect(first).toContainText("Urgent");
   await expect(first).toContainText("£504.00");
-  await expect(first.getByRole("button", { name: /using the email on record/ })).toBeVisible();
+  // One short button on the row; the card it opens says to check with the supplier using the email on record
+  await first.getByRole("button", { name: /^Take action/ }).click();
+  await expect(page.getByText(/using the email on record/)).toBeVisible();
 });

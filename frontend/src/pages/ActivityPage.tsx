@@ -92,6 +92,8 @@ const EVENTS: Record<string, (e: ActivityEntry) => string> = {
   approval_reject: (e) => `Rejected: ${what(e)}`,
   approval_refused: (e) => `An approval was refused${str(e.details?.reason) ? `: ${str(e.details?.reason)}` : ""}`,
   ai_paused: () => "AI actions were paused",
+  handoff_created: () => "A phone upload code was made (works for 10 minutes)",
+  conversation_deleted: () => "An Ask conversation was deleted",
   ai_resumed: () => "AI actions were switched back on",
   activity_exported: () => "The activity log was downloaded",
 };

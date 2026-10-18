@@ -1,4 +1,5 @@
 import {
+  ArrowRightIcon,
   BanknoteIcon,
   BellRingIcon,
   BuildingIcon,
@@ -24,10 +25,10 @@ import { toast } from "sonner";
 import { useCan, useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useDismissRecommendation, useDraftNextStep, useFollowRecommendation, useRecommendations, useRecordBankCharge, useRefreshRecommendations } from "@/api/hooks";
-import type { Action, RankedRecommendation, Recommendation, RecommendationType, RecommendationsRun } from "@/api/types";
+import type { Action, Permission, RankedRecommendation, Recommendation, RecommendationType, RecommendationsRun } from "@/api/types";
 import { ActionConfirmation } from "@/components/ActionConfirmation";
 import { Worded } from "@/components/AiText";
-import { BankChargeStep, GettingPaidSummary, isPaymentCosts, isReminder, PaymentCosts, ReminderChip, ReminderInvoices } from "@/components/GettingPaid";
+import { GettingPaidSummary, isPaymentCosts, isReminder, PaymentCosts, ReminderChip, ReminderInvoices } from "@/components/GettingPaid";
 import { Initials } from "@/components/Initials";
 import { IconTile, Stat } from "@/components/kit";
 import { Money } from "@/components/Money";
@@ -40,6 +41,7 @@ import { ListSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { WhyHint } from "@/components/WhyHint";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -235,7 +237,7 @@ function RecommendationRows({ items, ...rowProps }: { items: Recommendation[] } 
   );
 }
 
-/** One line per recommendation: kind, title, severity and money at stake. The next step shows on hover, and always on urgent ones. */
+/** One line per recommendation: kind, title, severity and money at stake. The step's button shows on hover, and always on urgent ones. */
 function RecommendationRow({ rec, active, onOpen, preparing, onPrepare, currency }: { rec: Recommendation; active: boolean } & Omit<RowProps, "openId">) {
   const type = RECOMMENDATION_TYPES[rec.type];
   const urgent = rec.severity === "urgent";
@@ -268,8 +270,12 @@ function RecommendationRow({ rec, active, onOpen, preparing, onPrepare, currency
         rec={rec}
         drafting={preparing(rec)}
         onPrepare={() => onPrepare(rec)}
-        // Urgent: its own line under the title, so the full step reads and the title isn't squeezed
-        className={cn(urgent ? "order-3 max-w-none basis-full pl-11" : "max-md:hidden transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100")}
+        // Urgent ones always show it; the rest on hover or focus
+        className={cn(
+          urgent
+            ? "max-sm:order-3 max-sm:basis-full max-sm:pl-11"
+            : "max-md:hidden transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:has-[[data-state=open]]:opacity-100",
+        )}
       />
       <span className="w-24 shrink-0 text-right text-sm font-medium max-md:order-2">{rec.at_stake_minor !== null && <Money minor={rec.at_stake_minor} currency={currency} />}</span>
       <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/60 max-md:order-2 max-sm:hidden" aria-hidden />
@@ -301,94 +307,133 @@ function StepStatus({ rec }: { rec: Recommendation }) {
   return null;
 }
 
-/** The next step as a small pill on the row: draft, open the draft, record the charge, or go to the page that helps. */
-function RowStep({ rec, drafting, onPrepare, className }: { rec: Recommendation; drafting: boolean; onPrepare: () => void; className?: string }) {
-  const can = useCan();
-  const follow = useFollowRecommendation();
+type StepAct = { type: "prepare" | "open"; label: string } | { type: "link"; label: string; href: string };
+
+/** What the next step does, as a short button label, or null when this person can't take it here. */
+function stepAct(rec: Recommendation, can: (p: Permission) => boolean): StepAct | null {
   const step = rec.next_step;
-  if (!step) return null;
-  const variant = rec.severity === "info" ? "secondary" : "default";
-  const wrap = (child: React.ReactNode) => (
-    <div className={cn("min-w-0 max-w-80 shrink", className)} onClick={(e) => e.stopPropagation()}>
-      {child}
-    </div>
-  );
-  const status = step.action?.status;
-  if (status === "executed") return null;
-  if (step.kind === "record_bank_charge") {
-    return can("reconcile") ? wrap(<BankChargeStep rec={rec} preparing={drafting} onPrepare={onPrepare} size="sm" />) : null;
-  }
+  if (!step || step.action?.status === "executed") return null;
   if (step.kind) {
-    if (!can("send_reminder")) return null;
-    const label = status === "pending" ? "Open the draft email" : status ? "Draft the email again" : step.label;
-    return wrap(
-      <Button size="sm" variant={variant} className="max-w-full" title={label} onClick={onPrepare} disabled={drafting} aria-describedby={status === "pending" ? `waiting-${rec.id}` : undefined}>
-        {drafting && <Loader2Icon className="animate-spin" aria-hidden />}
-        <span className="truncate">{label}</span>
-        {status === "pending" && (
-          <span id={`waiting-${rec.id}`} className="sr-only">
-            A draft is waiting for approval.
-          </span>
-        )}
-      </Button>,
-    );
+    if (!can(step.kind === "record_bank_charge" ? "reconcile" : "send_reminder")) return null;
+    if (step.action?.status === "pending") return { type: "open", label: "Open draft" };
+    return { type: "prepare", label: step.kind === "record_bank_charge" ? "Record charge" : step.action ? "Draft again" : "Draft email" };
   }
-  if (step.href) {
-    const page = PAGES[step.href];
-    return wrap(
-      <Button asChild size="sm" variant={variant} className="max-w-full" title={step.label}>
-        <Link to={step.href} onClick={() => follow.mutate(rec.id)}>
-          <span className="truncate">{step.label === "For information" && page ? `Open ${page}` : step.label}</span>
-        </Link>
-      </Button>,
-    );
-  }
+  if (step.href) return { type: "link", label: `Go to ${PAGES[step.href] ?? "the page"}`, href: step.href };
   return null;
 }
 
-/** The same next step in the panel, full width of words, with what happens before anything goes out. */
+/** The step in words, what happens before anything goes out, and one short button to do it. */
+function StepCard({ rec, act, drafting, onPrepare, children }: { rec: Recommendation; act: StepAct; drafting: boolean; onPrepare: () => void; children?: React.ReactNode }) {
+  const follow = useFollowRecommendation();
+  const step = rec.next_step!;
+  const note = safetyNote(rec);
+  const words = step.label === "For information" && act.type === "link" ? `More on the ${PAGES[act.href] ?? "linked"} page.` : step.label;
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-1">
+        <p className="text-xs font-medium text-muted-foreground">Next step</p>
+        <p className="text-sm">{words}</p>
+        {note && act.type !== "open" && <p className="text-xs text-muted-foreground">{note}</p>}
+        {act.type === "open" && <p className="text-xs text-muted-foreground">A draft is waiting for approval.</p>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {act.type === "link" ? (
+          <Button asChild size="sm">
+            <Link to={act.href} onClick={() => follow.mutate(rec.id)}>
+              {act.label} <ArrowRightIcon aria-hidden />
+            </Link>
+          </Button>
+        ) : (
+          <Button size="sm" onClick={onPrepare} disabled={drafting}>
+            {drafting && <Loader2Icon className="animate-spin" aria-hidden />}
+            {act.label}
+          </Button>
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** One short button on the row. It opens a small card that says exactly what will happen, then does it. */
+function RowStep({ rec, drafting, onPrepare, className }: { rec: Recommendation; drafting: boolean; onPrepare: () => void; className?: string }) {
+  const can = useCan();
+  const [open, setOpen] = useState(false);
+  const act = stepAct(rec, can);
+  if (!act) return null;
+  return (
+    // Clicks here (and inside the card, which React bubbles through its portal) don't open the panel
+    <div className={cn("shrink-0", className)} onClick={(e) => e.stopPropagation()}>
+      {act.type === "open" ? (
+        <Button size="sm" variant="secondary" onClick={onPrepare} disabled={drafting} aria-label={`Open draft: ${rec.title}`}>
+          {drafting ? <Loader2Icon className="animate-spin" aria-hidden /> : <MailIcon aria-hidden />} Open draft
+        </Button>
+      ) : (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant={rec.severity === "info" ? "secondary" : "default"} aria-label={`Take action: ${rec.title}`} disabled={drafting}>
+              {drafting && <Loader2Icon className="animate-spin" aria-hidden />}
+              Take action
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 p-4">
+            <StepCard
+              rec={rec}
+              act={act}
+              drafting={drafting}
+              onPrepare={() => {
+                setOpen(false);
+                onPrepare();
+              }}
+            >
+              <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+            </StepCard>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
+/** The same step in the panel, already in words, beside Dismiss. */
 function PanelStep({ rec, drafting, onPrepare }: { rec: Recommendation; drafting: boolean; onPrepare: () => void }) {
   const can = useCan();
-  const follow = useFollowRecommendation();
   const step = rec.next_step;
-  if (!step) return null;
-  const status = step.action?.status;
-  if (step.kind === "record_bank_charge") {
-    return <BankChargeStep rec={rec} preparing={drafting} onPrepare={onPrepare} className="h-auto min-h-9 whitespace-normal py-2 text-left" />;
-  }
-  if (step.kind) {
-    if (status === "executed") {
-      return (
-        <span className="inline-flex items-center gap-1.5 text-sm text-positive">
-          <MailCheckIcon className="size-4" aria-hidden /> Email sent
-        </span>
-      );
-    }
-    if (!can("send_reminder")) return <span className="text-sm text-muted-foreground">{step.label}</span>;
+  const act = stepAct(rec, can);
+  if (act) {
     return (
-      <Button className="h-auto min-h-9 max-w-full whitespace-normal py-2 text-left" onClick={onPrepare} disabled={drafting}>
-        {drafting && <Loader2Icon className="animate-spin" aria-hidden />}
-        {status === "pending" ? "Open the draft email" : status ? "Draft the email again" : step.label}
-      </Button>
+      <StepCard rec={rec} act={act} drafting={drafting} onPrepare={onPrepare}>
+        <DismissButton rec={rec} />
+      </StepCard>
     );
   }
-  if (step.href) {
-    const page = PAGES[step.href];
-    return (
-      <Button asChild className="h-auto min-h-9 max-w-full whitespace-normal py-2 text-left" variant={rec.severity === "info" ? "secondary" : "default"}>
-        <Link to={step.href} onClick={() => follow.mutate(rec.id)}>
-          {step.label === "For information" && page ? `Open ${page}` : step.label}
-        </Link>
-      </Button>
-    );
-  }
-  // Payment costs show the same advice as their tip, beside the comparison
-  if (isPaymentCosts(rec.getting_paid)) return null;
+  const done = step?.kind && step.action?.status === "executed";
   return (
-    <span className="inline-flex items-start gap-1.5 text-sm">
-      <LightbulbIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-      {step.label}
-    </span>
+    <div className="grid gap-3">
+      {done ? (
+        <span className="inline-flex items-center gap-1.5 text-sm text-positive">
+          {step.kind === "record_bank_charge" ? <ReceiptIcon className="size-4" aria-hidden /> : <MailCheckIcon className="size-4" aria-hidden />}
+          {step.kind === "record_bank_charge" ? "Bank charge recorded" : "Email sent"}
+        </span>
+      ) : (
+        // Advice with nothing to click, or a step this person can't take; payment costs show it as their tip
+        step &&
+        !isPaymentCosts(rec.getting_paid) && (
+          <div className="grid gap-1">
+            <p className="text-xs font-medium text-muted-foreground">Next step</p>
+            <p className="inline-flex items-start gap-1.5 text-sm">
+              <LightbulbIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+              {step.label}
+            </p>
+          </div>
+        )
+      )}
+      <div>
+        <DismissButton rec={rec} />
+      </div>
+    </div>
   );
 }
 
@@ -460,7 +505,6 @@ function RecommendationDetail({
 }) {
   const related = rec.next_step?.related_action_ids ?? [];
   const sev = SEVERITIES[rec.severity];
-  const note = safetyNote(rec);
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-7">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -488,13 +532,7 @@ function RecommendationDetail({
           <ActionConfirmation confirmation={draft} onDone={onDone} />
         </section>
       ) : (
-        <div className="grid gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <PanelStep rec={rec} drafting={drafting} onPrepare={onPrepare} />
-            <DismissButton rec={rec} />
-          </div>
-          {note && <p className="text-xs text-muted-foreground">{note}</p>}
-        </div>
+        <PanelStep rec={rec} drafting={drafting} onPrepare={onPrepare} />
       )}
 
       {related.length > 0 && (

@@ -308,4 +308,18 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
   - Rows with a fraud warning can no longer be bulk-approved or approved with a single key; they always open the full approval card.
   - Charts no longer animate in, which could leave them empty in a background tab.
   - Tests: 14 new frontend tests; 174 frontend tests and all 7 journeys pass.
-- Still to do: swipe review on phones, show your work (click a number to open its source), phone handoff polish, Today briefing read aloud, reduce-motion check, accessibility pass.
+- Brand: the app is now **Cocent** ("every cent, with your consent"). The logo is in the sidebar, the sign-in page and the phone page; the browser tab, home-screen icons and the two-step sign-in entry use it too. The accent colour moved to the logo's violet. The story behind the name is in the README.
+- After the design pass:
+  - Phone upload works. The "Use your phone" button called a server endpoint that was never built (`api/handoff.py` is new):
+    - The QR code's link works for 10 minutes and up to 10 photos, for the person who made it.
+    - The link is stored only as a fingerprint.
+    - Photos go through the same safety checks as any upload, and arrive in the dialog on the computer as they land.
+    - In development the link uses the computer's Wi-Fi address, since a phone can't open "localhost", so the phone must be on the same Wi-Fi.
+  - Ask: you can delete your own conversations. The activity log records that a conversation was deleted, never what was said. Example questions now go into the box to edit or send, instead of sending straight away.
+  - Recommendations is in the sidebar. Each row has one short "Take action" button that opens a card saying exactly what will happen, then a short confirm ("Draft email", "Record charge", "Go to cash flow").
+  - Cash flow: "Move a bill" is now a tidy list, one row per bill in date order, each with who, how much and a date handle on a 90-day line, plus a way to put it back.
+  - Bug: the financing list timed the money to arrive the day before cash dips, but an option's detail panel started it tomorrow. An overdraft's repayment then fell inside the dip, so the list said "Covers it" while its own panel showed cash below the safety level. Both now use the same rule, and the panel says when the money arrives.
+  - Bug, found by the browser journeys: when the AI's answer failed our check we showed our own figures but hid "What the AI saw", though the question and figures (names hidden) had been sent. It now shows whenever something went to the AI.
+  - The browser journeys that wait on the real AI get up to 3 minutes per AI step.
+  - Tests: 10 new backend tests (phone upload, deleting conversations, financing list and panel agree), 5 new frontend tests; 540 backend and 179 frontend tests and all 7 journeys pass.
+- Still to do: swipe review on phones, show your work (click a number to open its source), Today briefing read aloud, reduce-motion check, accessibility pass.

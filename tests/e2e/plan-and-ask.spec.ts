@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { OWNER, signIn } from "./helpers";
+import { AI_TEST, AI_WAIT, OWNER, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -27,6 +27,7 @@ test("what-if: moving a bill shows the new lowest point and changes nothing", as
 });
 
 test("ask: an answer from the records, and the AI saw placeholders, not names", async ({ page }) => {
+  test.setTimeout(AI_TEST);
   await signIn(page, OWNER);
   await page.goto("/ask");
   await page.getByPlaceholder("Ask about your business…").fill("Which customers owe us the most right now?");
@@ -34,7 +35,7 @@ test("ask: an answer from the records, and the AI saw placeholders, not names", 
 
   const conversation = page.getByRole("list", { name: "Conversation" });
   const answer = conversation.getByRole("listitem").nth(1);
-  await expect(answer).toContainText("£", { timeout: 90_000 });
+  await expect(answer).toContainText("£", { timeout: AI_WAIT });
   // Station Coffee Co and Bright Cafe are the story's biggest customers
   await expect(answer).toContainText(/Station Coffee|Bright Cafe/);
 
