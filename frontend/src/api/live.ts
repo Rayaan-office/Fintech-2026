@@ -7,6 +7,8 @@ const AFFECTS: Record<string, string[]> = {
   action: ["inbox", "documents", "activity", "home", "recommendations"],
   connection: ["connections", "activity"],
   matches: ["inbox", "activity", "home"],
+  recommendations: ["recommendations", "home"],
+  forecast: ["cash-flow", "financing", "home"],
   email_sent: ["activity"],
   ai_pause: ["me", "activity"],
 };

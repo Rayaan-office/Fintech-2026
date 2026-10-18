@@ -6,6 +6,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
@@ -148,6 +150,59 @@ export function CategoryBarChart({
         />
         <Bar dataKey={valueKey} fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={animate} animationDuration={300} />
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** The forecast with a financing option's money in and repayments added, against the forecast without it. */
+export function ForecastEffectChart({
+  series,
+  without,
+  safetyLevelMinor,
+  currency = "GBP",
+  height = 220,
+}: {
+  series: { date: string; expected_minor: number }[];
+  without?: { date: string; expected_minor: number }[];
+  safetyLevelMinor: number;
+  currency?: string;
+  height?: number;
+}) {
+  const { hidden } = usePrivacy();
+  const before = new Map((without ?? []).map((p) => [p.date, p.expected_minor]));
+  const data = series.map((p) => ({ date: p.date, with_minor: p.expected_minor, without_minor: before.get(p.date) }));
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+        <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={32} tickFormatter={(d: string) => formatDate(d)} />
+        <YAxis tick={axis} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => (hidden ? "••••" : formatMoneyCompact(v, currency))} />
+        <Tooltip
+          cursor={{ stroke: "var(--border)" }}
+          content={({ active, payload, label }) => {
+            const point = payload?.[0]?.payload as (typeof data)[number] | undefined;
+            if (!active || !point) return null;
+            return (
+              <ChartTooltip title={formatDate(String(label), true)}>
+                <Row label="With this">
+                  <Money minor={point.with_minor} currency={currency} />
+                </Row>
+                {point.without_minor !== undefined && (
+                  <Row label="Without">
+                    <Money minor={point.without_minor} currency={currency} />
+                  </Row>
+                )}
+              </ChartTooltip>
+            );
+          }}
+        />
+        <ReferenceLine y={safetyLevelMinor} stroke="var(--warning)" strokeDasharray="4 4" label={{ value: "Safety level", position: "insideTopLeft", ...axis }} />
+        {without && (
+          <Line dataKey="without_minor" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="3 3" dot={false} isAnimationActive={false} connectNulls />
+        )}
+        {/* Drawn at once: the sliders re-render it often, which cut the draw-in animation short */}
+        <Line dataKey="with_minor" stroke="var(--primary)" strokeWidth={2} dot={false} isAnimationActive={false} />
+      </LineChart>
     </ResponsiveContainer>
   );
 }

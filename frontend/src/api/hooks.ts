@@ -5,6 +5,9 @@ import type {
   Activity,
   ActivityCheck,
   AskReply,
+  AskThread,
+  AskThreadSummary,
+  BusinessProfile,
   BusinessHealth,
   CashFlow,
   ConnectionProvider,
@@ -12,13 +15,15 @@ import type {
   DocumentDetail,
   DocumentSummary,
   Financing,
-  FinancingQuote,
   Handoff,
   HomeSummary,
   Inbox,
   InboxTab,
   Notification,
+  ProfileUpdate,
+  QuoteResult,
   Recommendation,
+  RecommendationsRun,
   SearchResult,
   SyncResult,
   TeamMember,
@@ -43,7 +48,22 @@ export const useInbox = (tab: InboxTab, enabled = true) => useScreen<Inbox>(["in
 export const useCashFlow = () => useScreen<CashFlow>(["cash-flow"], "/api/cash-flow");
 export const useBusinessHealth = () => useScreen<BusinessHealth>(["business-health"], "/api/business-health");
 export const useRecommendations = () => useScreen<{ items: Recommendation[] }>(["recommendations"], "/api/recommendations");
-export const useFinancing = () => useScreen<Financing>(["financing"], "/api/financing");
+
+export type FinancingAsk = { amount_minor?: number; months?: number; purpose?: string };
+
+/** Options for the forecast's shortfall, or for an amount and purpose the person chose. */
+export function useFinancing(ask: FinancingAsk = {}) {
+  const q = new URLSearchParams();
+  if (ask.amount_minor) q.set("amount_minor", String(ask.amount_minor));
+  if (ask.months) q.set("months", String(ask.months));
+  if (ask.purpose) q.set("purpose", ask.purpose);
+  const query = q.toString();
+  return useQuery({
+    queryKey: ["financing", "options", ask],
+    queryFn: ({ signal }) => apiOptional<Financing>(`/api/financing${query ? `?${query}` : ""}`, { signal }),
+    placeholderData: keepPreviousData,
+  });
+}
 /** Employees get only the documents they sent in; the server filters. */
 export const useDocuments = () => useScreen<{ items: DocumentSummary[] }>(["documents", "list"], "/api/documents?limit=200");
 export const useActivityCheck = () => useScreen<ActivityCheck>(["activity", "verify"], "/api/activity/verify");
@@ -91,8 +111,8 @@ export function useWhatIf(scenario: WhatIf | null) {
 
 export function useFinancingQuote(input: { option_id: string; amount_minor: number; months: number } | null) {
   return useQuery({
-    queryKey: ["financing-quote", input],
-    queryFn: ({ signal }) => apiOptional<FinancingQuote>("/api/financing/quote", { method: "POST", body: input, signal }),
+    queryKey: ["financing", "quote", input],
+    queryFn: ({ signal }) => apiOptional<QuoteResult>("/api/financing/quote", { method: "POST", body: input, signal }),
     enabled: input !== null,
     placeholderData: keepPreviousData,
   });
@@ -133,17 +153,80 @@ export const useRejectAction = () => useActionMutation("reject");
 export const useCancelAction = () => useActionMutation("cancel");
 export const useUndoAction = () => useActionMutation("undo");
 
+const recPath = (id: string, verb: string) => `/api/recommendations/${encodeURIComponent(id)}/${verb}`;
+
+/** `mute` also stops that kind for that supplier or customer; the server ignores it for changed bank details. */
 export function useDismissRecommendation() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (id: string) => api<{ ok: true }>(`/api/recommendations/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
+    mutationFn: ({ id, mute }: { id: string; mute: boolean }) => api<{ ok: true; muted: boolean }>(recPath(id, "dismiss"), { method: "POST", body: { mute } }),
     onSuccess: () => invalidate("recommendations", "home"),
+  });
+}
+
+/** Look again now instead of waiting for new data or the daily run. */
+export function useRefreshRecommendations() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: () => api<RecommendationsRun>("/api/recommendations/refresh", { method: "POST" }),
+    onSuccess: () => invalidate("recommendations", "home"),
+  });
+}
+
+/** Drafts the suggested email (or returns the draft already waiting). Nothing is sent until someone approves. */
+export function useDraftNextStep() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => api<{ action: Action }>(recPath(id, "next-step"), { method: "POST" }),
+    onSuccess: () => invalidate("recommendations", "inbox"),
+  });
+}
+
+/** Owners correct automatic values (null puts one back) and add what only they know. */
+export function useSaveProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (update: ProfileUpdate) => api<BusinessProfile>("/api/business-profile", { method: "PUT", body: update }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["financing"] }),
+  });
+}
+
+/** Prepares the pack now and asks a business owner to approve sending exactly that PDF. */
+export function useShareLenderPack() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (to: { lender_name: string; email: string }) => api<{ action: Action }>("/api/lender-pack/share", { method: "POST", body: to }),
+    onSuccess: () => invalidate("inbox", "activity"),
+  });
+}
+
+// Ask. Each person sees only their own conversations.
+
+export const useAskThreads = () => useScreen<{ items: AskThreadSummary[] }>(["ask", "threads"], "/api/ask/threads");
+
+/** A conversation's messages. Only this person adds to it, and each answer is added to the cache as it arrives. */
+export function useAskThread(id: string | null) {
+  return useQuery({
+    queryKey: ["ask", "thread", id],
+    queryFn: ({ signal }) => api<AskThread>(`/api/ask/threads/${encodeURIComponent(id ?? "")}`, { signal }),
+    enabled: Boolean(id),
+    staleTime: Infinity,
   });
 }
 
 export function useAsk() {
   return useMutation({
-    mutationFn: (question: string) => api<AskReply>("/api/ask", { method: "POST", body: { question } }),
+    mutationFn: (input: { question: string; thread_id?: string | null }) =>
+      api<AskReply>("/api/ask", { method: "POST", body: { question: input.question, ...(input.thread_id ? { thread_id: input.thread_id } : {}) } }),
+  });
+}
+
+/** Turns the assistant's suggestion into a draft email that waits for approval. */
+export function useAskAct() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (messageId: string) => api<{ action: Action }>(`/api/ask/messages/${encodeURIComponent(messageId)}/act`, { method: "POST" }),
+    onSuccess: () => invalidate("inbox"),
   });
 }
 
