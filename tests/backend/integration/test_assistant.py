@@ -121,6 +121,22 @@ def test_conversations_are_private(books, sign_in, fake_ai):
     assert first["thread_id"] not in str(books_c.get("/api/ask/threads").json())
 
 
+def test_you_can_delete_your_own_conversation_and_only_yours(books, sign_in, fake_ai):
+    owner, books_c = sign_in(f"owner@{books['tag']}.test"), sign_in(f"books@{books['tag']}.test")
+    fake_ai.push(plan({"name": "cash_forecast"}), copy_answer())
+    tid = _ask(owner, "What is my cash?")["thread_id"]
+    assert books_c.delete(f"/api/ask/threads/{tid}").status_code == 404  # a colleague can't
+    assert owner.delete(f"/api/ask/threads/{tid}").json() == {"ok": True}
+    assert owner.get(f"/api/ask/threads/{tid}").status_code == 404
+    assert tid not in str(owner.get("/api/ask/threads").json())
+    assert owner.delete(f"/api/ask/threads/{tid}").status_code == 404
+    with tenant_session(books["id"]) as db:
+        assert not db.execute(select(ChatMessage).where(ChatMessage.thread_id == tid)).first()
+        logged = db.execute(text("SELECT details FROM audit_log WHERE event = 'conversation_deleted' AND subject = :t"),
+                            {"t": tid}).scalar_one()
+        assert logged == {"messages": 2}  # that it happened, never what was said
+
+
 def test_a_suggested_reminder_becomes_a_draft_only_when_clicked(books, sign_in, fake_ai):
     with tenant_session(books["id"]) as db:
         cafe = db.execute(select(Counterparty).where(Counterparty.display_name == "Bright Cafe")).scalar_one()

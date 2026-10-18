@@ -194,14 +194,20 @@ describe("Cash flow", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show all 10" }));
     expect(within(table).getAllByRole("row")).toHaveLength(11);
 
-    // Bills on the same day stack two rows high; the rest are one click away
+    // One row per bill in date order: the five soonest, the rest one click away
     const strip = within(screen.getByRole("heading", { name: /Move a bill/ }).closest("section")!);
-    expect(strip.getAllByRole("slider")).toHaveLength(3); // two of the six on 19 October, and BrightSpark on 5 November
-    // Regression: a bill moved into a folded row vanished from the strip, taking the keyboard focus with it
-    const first = strip.getAllByRole("slider")[0]!;
-    for (let i = 0; i < 3; i++) fireEvent.keyDown(first, { key: "ArrowRight" });
-    expect(first).toBeInTheDocument();
-    expect(first).toHaveAttribute("aria-valuenow", "4");
+    const sliders = strip.getAllByRole("slider");
+    expect(sliders).toHaveLength(5);
+    expect(sliders.map((el) => el.getAttribute("aria-valuetext"))).toEqual(Array(5).fill("19 Oct 2026"));
+    // Regression: a moved bill vanished from the folded list, taking the keyboard focus with it
+    const last = sliders[4]!;
+    for (let i = 0; i < 20; i++) fireEvent.keyDown(last, { key: "ArrowRight" });
+    expect(last).toBeInTheDocument();
+    expect(last).toHaveAttribute("aria-valuenow", "21");
+    // It stays in its row, with a way to put it back
+    expect(strip.getAllByRole("slider")[4]).toBe(last);
+    await userEvent.click(strip.getByRole("button", { name: "Put Supplier 5 back on 19 Oct" }));
+    expect(last).toHaveAttribute("aria-valuetext", "19 Oct 2026");
 
     await userEvent.click(strip.getByRole("button", { name: "Show all 8" }));
     expect(strip.getAllByRole("slider")).toHaveLength(8);

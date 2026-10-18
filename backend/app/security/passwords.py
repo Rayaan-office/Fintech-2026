@@ -38,7 +38,7 @@ def new_totp_secret() -> tuple[str, str]:
 
 
 def totp_uri(secret: str, email: str) -> str:
-    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="SME Finance Copilot")
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name="Cocent")
 
 
 def verify_totp(secret_enc: str | None, code: str) -> bool:

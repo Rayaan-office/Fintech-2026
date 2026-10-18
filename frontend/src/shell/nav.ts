@@ -37,10 +37,10 @@ export const NAV_GROUPS: Record<NavGroup, string> = { money: "Money", records: "
 export const NAV: NavItem[] = [
   { to: "/", label: "Home", icon: HouseIcon, perm: "view_all", place: "main", phone: true },
   { to: "/inbox", label: "Inbox", icon: InboxIcon, perm: "view_all", place: "main", phone: true },
+  { to: "/recommendations", label: "Recommendations", icon: LightbulbIcon, perm: "view_all", place: "main" },
   { to: "/ask", label: "Ask", icon: MessageCircleIcon, perm: "use_assistant", place: "main", phone: true },
   { to: "/cash-flow", label: "Cash flow", icon: TrendingUpIcon, perm: "view_all", place: "main", phone: true, group: "money" },
   { to: "/health", label: "Business health", icon: ChartColumnIcon, perm: "view_all", place: "main", group: "money" },
-  { to: "/recommendations", label: "Recommendations", icon: LightbulbIcon, perm: "view_all", place: "hidden" },
   { to: "/financing", label: "Financing", icon: LandmarkIcon, perm: "use_financing", place: "main", group: "money" },
   { to: "/documents", label: "Documents", icon: FileTextIcon, perm: "view_all", place: "main", group: "records" },
   { to: "/activity", label: "Activity", icon: ActivityIcon, perm: "view_activity", place: "main", group: "records" },

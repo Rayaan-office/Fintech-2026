@@ -28,6 +28,8 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/sign-in", Component: LoginPage },
       { path: "/sign-in/two-step", Component: TwoStepPage },
+      // Opened on a phone from the QR code: the link is the key, so no sign-in
+      { path: "/m/:token", lazy: async () => ({ Component: (await import("./pages/PhoneUploadPage")).default }) },
       {
         Component: RequireAuth,
         children: [

@@ -87,7 +87,7 @@ describe("sign-in flow", () => {
     const main = await screen.findAllByRole("navigation", { name: "Main" });
     expect(router.state.location.pathname).toBe("/");
     const sidebar = main[0]!;
-    for (const label of ["Home", "Inbox", "Ask", "Cash flow", "Business health", "Documents", "Activity"]) {
+    for (const label of ["Home", "Inbox", "Recommendations", "Ask", "Cash flow", "Business health", "Documents", "Activity"]) {
       expect(sidebar).toHaveTextContent(label);
     }
     // Bookkeepers can't use financing tools, so it isn't in their menu

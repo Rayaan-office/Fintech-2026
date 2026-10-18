@@ -1,10 +1,9 @@
-import { CheckIcon, CreditCardIcon, Loader2Icon, ReceiptIcon, ShieldCheckIcon } from "lucide-react";
-import { useCurrentUser, useCan } from "@/api/auth";
+import { CheckIcon, CreditCardIcon, ShieldCheckIcon } from "lucide-react";
+import { useCurrentUser } from "@/api/auth";
 import { useGettingPaid } from "@/api/hooks";
 import type { CardRate, GettingPaidDetail, PaymentCostsDetail, PaymentMethodRow, Recommendation, ReminderDetail } from "@/api/types";
 import { Disclosure, InfoPopover, StatStrip, type StatItem } from "@/components/kit";
 import { Money } from "@/components/Money";
-import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -205,27 +204,6 @@ export function PaymentCosts({ detail }: { detail: PaymentCostsDetail }) {
         </span>
       </p>
     </div>
-  );
-}
-
-/** The bank-charge next step: prepare it, open it while it waits, or say it is done. */
-export function BankChargeStep({ rec, preparing, onPrepare, size, className }: { rec: Recommendation; preparing: boolean; onPrepare: () => void; size?: "sm" | "default"; className?: string }) {
-  const can = useCan();
-  const step = rec.next_step!;
-  const status = step.action?.status;
-  if (status === "executed") {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sm text-positive">
-        <ReceiptIcon className="size-4" aria-hidden /> Bank charge recorded
-      </span>
-    );
-  }
-  if (!can("reconcile")) return <span className="text-sm text-muted-foreground">{step.label}</span>;
-  return (
-    <Button size={size} className={cn("max-w-full", className)} onClick={onPrepare} disabled={preparing}>
-      {preparing && <Loader2Icon className="animate-spin" aria-hidden />}
-      <span className="truncate">{status === "pending" ? "Open the bank charge" : step.label}</span>
-    </Button>
   );
 }
 

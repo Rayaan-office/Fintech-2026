@@ -54,7 +54,8 @@ export function Answer({ message: m, latest, onFollowUp }: { message: AssistantM
   const sawId = useId();
   const reduce = useReducedMotion();
   const ai = m.answer.ai_written;
-  const saw = ai && m.answer.redacted_input ? m.answer.redacted_input : "";
+  // Shown whenever something went to the AI, even when its answer failed our check and we show our own figures
+  const saw = m.answer.redacted_input || "";
 
   return (
     <AssistantTurn>
@@ -64,7 +65,7 @@ export function Answer({ message: m, latest, onFollowUp }: { message: AssistantM
         <AnswerBlock key={i} block={b} />
       ))}
 
-      {(ai || m.sources.length > 0) && (
+      {(ai || saw || m.sources.length > 0) && (
         <div className="grid gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
             {ai && (

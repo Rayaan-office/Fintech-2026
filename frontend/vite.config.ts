@@ -15,6 +15,8 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
+    // Listen on the Wi-Fi too, so a phone can open the upload page from the QR code
+    host: true,
     // Same origin from the browser's point of view: cookies and the Origin header pass through unchanged
     proxy: {
       "/api": { target: api, changeOrigin: false },

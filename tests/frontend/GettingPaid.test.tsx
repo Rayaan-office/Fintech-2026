@@ -151,7 +151,9 @@ describe("Getting paid", () => {
     expect(invoices).toHaveTextContent("11 days overdue");
     expect(invoices).toHaveTextContent("Includes a link to pay online by card, made only once the reminder is approved.");
     expect(panel).not.toHaveTextContent("A business owner approves");
-    await userEvent.click(within(card).getByRole("button", { name: "Draft reminder 2 of 3 to Bright Cafe" }));
+    // The panel says the step in words, with one short button to do it
+    expect(panel).toHaveTextContent("Draft reminder 2 of 3 to Bright Cafe");
+    await userEvent.click(within(panel).getByRole("button", { name: "Draft email" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/recommendations/rem2/next-step")).toBe(true));
   });
 
@@ -168,7 +170,11 @@ describe("Getting paid", () => {
     const { calls } = setup({ me: bookkeeper, items: [costs()] });
     const card = await cardFor("Amsterdam Bakehouse BV's payments arrived £175.22 short");
     expect(card).toHaveTextContent("Cost of getting paid");
-    await userEvent.click(within(card).getByRole("button", { name: "Record £37.72 as bank charges" }));
+    // One short button; the card it opens says exactly what will be recorded
+    await userEvent.click(within(card).getByRole("button", { name: /^Take action/ }));
+    expect(await screen.findByText("Record £37.72 as bank charges")).toBeInTheDocument();
+    expect(calls.some((c) => c.path.endsWith("/bank-charge"))).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Record charge" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/recommendations/cost1/bank-charge")).toBe(true));
     const panel = await screen.findByRole("dialog", { name: "Amsterdam Bakehouse BV's payments arrived £175.22 short" });
     const charge = within(panel).getByRole("region", { name: "Bank charge to record" });

@@ -17,6 +17,8 @@ import type {
   DocumentSummary,
   Financing,
   Handoff,
+  HandoffPage,
+  HandoffStatus,
   HomeSummary,
   Inbox,
   InboxTab,
@@ -238,6 +240,19 @@ export function useAsk() {
   });
 }
 
+/** Deletes one of your own conversations. */
+export function useDeleteAskThread() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: true }>(`/api/ask/threads/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: (_, id) => {
+      qc.removeQueries({ queryKey: ["ask", "thread", id] });
+      void qc.invalidateQueries({ queryKey: ["ask", "threads"] });
+      void qc.invalidateQueries({ queryKey: ["ask", "stats"] });
+    },
+  });
+}
+
 /** Turns the assistant's suggestion into a draft email that waits for approval. */
 export function useAskAct() {
   const invalidate = useInvalidate();
@@ -297,6 +312,36 @@ export function useRemovePlan() {
 
 export function useCreateHandoff() {
   return useMutation({ mutationFn: () => api<Handoff>("/api/handoff", { method: "POST" }) });
+}
+
+/** The computer watches what arrives from the phone while the QR code is open. */
+export function useHandoffStatus(id: string | null) {
+  return useQuery({
+    queryKey: ["handoff", id],
+    queryFn: ({ signal }) => api<HandoffStatus>(`/api/handoff/${encodeURIComponent(id ?? "")}`, { signal }),
+    enabled: Boolean(id),
+    refetchInterval: (q) => (q.state.data?.expired ? false : 2000),
+  });
+}
+
+// The phone's side: no session, the link is the key
+
+export function useHandoffPage(token: string) {
+  return useQuery({
+    queryKey: ["handoff-page", token],
+    queryFn: ({ signal }) => api<HandoffPage>(`/api/handoff/upload/${encodeURIComponent(token)}`, { signal }),
+    retry: false,
+  });
+}
+
+export function usePhoneUpload(token: string) {
+  return useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData();
+      body.append("file", file);
+      return api<{ id: string; left: number }>(`/api/handoff/upload/${encodeURIComponent(token)}`, { method: "POST", body });
+    },
+  });
 }
 
 // Connections. Connecting reads everything once, so these can take a few seconds.

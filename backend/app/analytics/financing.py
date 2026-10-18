@@ -329,6 +329,13 @@ def effect(fc: dict, flows: list[tuple[date, int]]) -> dict:
 # ── Matching and ranking ───────────────────────────────────────────────────
 
 
+def money_arrives(g: dict | None, today: date) -> date:
+    """When we time the money to arrive: the day before cash first dips below the safety level, or
+    tomorrow when it doesn't dip. The list and the detail panel both use this, so they agree."""
+    start = date.fromisoformat(g["starts_on"]) - timedelta(days=1) if g else today + timedelta(days=1)
+    return max(start, today + timedelta(days=1))
+
+
 def _open_bills(db: Session) -> int:
     bills, _ = ledger.open_items(db, "bill")
     return sum(b.open_minor for b in bills)
@@ -346,8 +353,7 @@ def options(db: Session, today: date | None = None, amount: int | None = None, m
     g = gap(fc)
     need_amount = amount or (g["amount_minor"] if g else None)
     need_months = months or (g["months"] if g else None)
-    start = date.fromisoformat(g["starts_on"]) - timedelta(days=1) if g and not amount else today + timedelta(days=1)
-    start = max(start, today + timedelta(days=1))
+    start = money_arrives(g, today)
     bills = _open_bills(db)
     out = []
     for p in catalog():
@@ -363,7 +369,7 @@ def options(db: Session, today: date | None = None, amount: int | None = None, m
                 q = quote(p, amt, mon, values, start)
                 eff = effect(fc, q.pop("flows"))
                 eff.pop("series")
-                item["quote"] = {**q, **eff, "covers_need": amt >= need_amount}
+                item["quote"] = {**q, **eff, "covers_need": amt >= need_amount, "arrives_on": start.isoformat()}
             elif ok:
                 item["reasons"] = why = [f"The most this could give you is {_money(top)}."]
                 item["eligibility_note"] = why[0]
@@ -394,9 +400,10 @@ def quote_one(db: Session, product_id: str, amount: int, months: int, today: dat
                          f"{p['min_months']} to {p['max_months']} months.")
     ok, why = eligibility(p, values, bills)
     fc = forecast.build(db, today)
-    q = quote(p, amount, months, values, today + timedelta(days=1))
+    start = money_arrives(gap(fc), today)
+    q = quote(p, amount, months, values, start)
     eff = effect(fc, q.pop("flows"))
-    return {"option_id": p["id"], "eligible": ok, "reasons": why, **q, **eff}
+    return {"option_id": p["id"], "eligible": ok, "reasons": why, **q, **eff, "arrives_on": start.isoformat()}
 
 
 # ── Readiness ──────────────────────────────────────────────────────────────

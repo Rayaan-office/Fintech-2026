@@ -38,6 +38,9 @@ def test_another_business_cannot_read_a_chat(businesses, sign_in):
     c = sign_in("books@a.test")  # owners set up two-step sign-in, which other tests expect fresh
     assert c.get(f"/api/ask/threads/{tid}").status_code == 404
     assert c.post("/api/ask", json={"question": "Hi", "thread_id": str(tid)}).status_code == 404
+    assert c.delete(f"/api/ask/threads/{tid}").status_code == 404
+    with tenant_session(businesses["b"]) as db:
+        assert db.get(ChatThread, tid)  # still there
 
 
 def test_assistant_tools_see_only_one_business(businesses):

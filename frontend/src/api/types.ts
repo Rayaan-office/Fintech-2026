@@ -359,6 +359,8 @@ export type FinancingQuote = {
   factor: [number, number] | null;
   yearly_cost_pct: number | null;
   closes_gap: boolean;
+  /** When we time the money to arrive: the day before cash first dips, or tomorrow. */
+  arrives_on?: string;
   lowest_minor: number;
   lowest_on: string;
   first_below_on: string | null;
@@ -558,7 +560,10 @@ export type AskThread = { id: string; title: string; messages: AskMessage[] };
 
 // Phone handoff
 
-export type Handoff = { url: string; expires_at: string };
+export type Handoff = { id: string; url: string; expires_at: string; max_uploads: number };
+export type HandoffStatus = { id: string; expires_at: string; expired: boolean; received: { id: string; filename: string; status: string }[] };
+/** What the phone's upload page shows. */
+export type HandoffPage = { business: string; expires_at: string; left: number };
 
 // Notifications and search
 

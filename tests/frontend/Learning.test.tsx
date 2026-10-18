@@ -201,7 +201,9 @@ describe("Less useful to you", () => {
   it("counts opening the suggested page as acting on it", async () => {
     const { calls } = setupRecs([{ ...creep, less_useful: false }]);
     const card = await screen.findByRole("listitem", { name: "Software costs crept up" });
-    await userEvent.click(within(card).getByRole("link", { name: "Review this cost" }));
+    await userEvent.click(within(card).getByRole("button", { name: /^Take action/ }));
+    expect(await screen.findByText("Review this cost")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Go to business health" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/recommendations/r5/followed")).toBe(true));
   });
 

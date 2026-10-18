@@ -49,10 +49,18 @@ const earlier: AskThread = {
 
 function setup({ replies = [askReply(), forecastReply] as (AskReply | { status: number; detail: string })[] } = {}) {
   let n = 0;
+  let deleted = false;
   const api = mockApi({
     "GET /api/auth/me": () => ({ status: 200, body: owner }),
     "GET /api/inbox": () => ({ status: 200, body: { items: [], counts: { to_review: 0, needs_approval: 0 } } }),
-    "GET /api/ask/threads": () => ({ status: 200, body: { items: [{ id: "t0", title: earlier.title, created_at: new Date().toISOString() }] } }),
+    "GET /api/ask/threads": () => ({
+      status: 200,
+      body: { items: deleted ? [] : [{ id: "t0", title: earlier.title, created_at: new Date().toISOString() }] },
+    }),
+    "DELETE /api/ask/threads/t0": () => {
+      deleted = true;
+      return { status: 200, body: { ok: true } };
+    },
     "GET /api/ask/threads/t0": () => ({ status: 200, body: earlier }),
     "POST /api/ask": () => {
       const r = replies[Math.min(n++, replies.length - 1)]!;
@@ -67,10 +75,11 @@ function setup({ replies = [askReply(), forecastReply] as (AskReply | { status: 
 const bodyOf = (init: RequestInit | undefined) => JSON.parse(String(init?.body ?? "null"));
 const conversation = () => screen.getByRole("list", { name: "Conversation" });
 
-/** Example questions sit under topic tabs, as short chips that send the full question. */
+/** Example questions sit under topic tabs, as short chips that put the full question in the box; the person sends it. */
 async function askExample(topic: string, chip: string) {
   await userEvent.click(await screen.findByRole("tab", { name: topic }));
   await userEvent.click(await screen.findByRole("button", { name: chip }));
+  await userEvent.click(screen.getByRole("button", { name: "Send question" }));
 }
 
 describe("Ask", () => {
@@ -95,6 +104,10 @@ describe("Ask", () => {
     const { calls } = setup();
     await askExample("Customers", "Who owes the most");
     await userEvent.click(await screen.findByRole("button", { name: "What does my cash look like next month?" }));
+    // A follow-up fills the box but doesn't send by itself
+    expect(screen.getByLabelText("Ask a question")).toHaveValue("What does my cash look like next month?");
+    expect(calls.filter((c) => c.path === "/api/ask")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Send question" }));
     expect(await screen.findByText(/Your cash stays above/)).toBeInTheDocument();
     const asks = calls.filter((c) => c.path === "/api/ask").map((c) => bodyOf(c.init));
     expect(asks[1]).toEqual({ question: "What does my cash look like next month?", thread_id: "t1" });
@@ -119,7 +132,7 @@ describe("Ask", () => {
     expect(screen.queryByRole("navigation", { name: "Earlier conversations" })).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "History" }));
     const history = await screen.findByRole("navigation", { name: "Earlier conversations" });
-    await userEvent.click(await within(history).findByRole("button", { name: /Has Acme raised its prices\?/ }));
+    await userEvent.click(await within(history).findByRole("button", { name: /^Has Acme raised its prices\?/ }));
     expect(await screen.findByText(/I couldn't word an answer I could check/)).toBeInTheDocument();
     // Our own figures, not the AI's words: no AI label
     expect(within(conversation()).queryByText("Checked against your records")).not.toBeInTheDocument();
@@ -129,6 +142,30 @@ describe("Ask", () => {
     expect(bodyOf(calls.find((c) => c.path === "/api/ask")!.init)).toEqual({ question: "And Northern Packaging?", thread_id: "t0" });
     expect(await screen.findByText(/Bright Cafe owes you the most/)).toBeInTheDocument();
     expect(within(conversation()).getByText("Has Acme raised its prices?")).toBeInTheDocument();
+  });
+
+  it("deletes an earlier conversation after a check", async () => {
+    const { calls } = setup();
+    await userEvent.click(await screen.findByRole("button", { name: "History" }));
+    const history = await screen.findByRole("navigation", { name: "Earlier conversations" });
+    await userEvent.click(await within(history).findByRole("button", { name: "Delete conversation: Has Acme raised its prices?" }));
+    expect(calls.some((c) => c.init?.method === "DELETE")).toBe(false); // nothing gone until confirmed
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/ask/threads/t0" && c.init?.method === "DELETE")).toBe(true));
+    expect(await within(history).findByText(/No conversations yet/)).toBeInTheDocument();
+  });
+
+  // Found by the browser journeys: when the AI's answer failed our check we showed our own figures,
+  // but hid what had been sent to the AI, though it had been sent
+  it("still shows what the AI saw when we fall back to our own figures", async () => {
+    setup({
+      replies: [askReply({ answer: { text: "Here are the figures from our records:", redacted_input: "Question: Who owes me the most?\n[CUSTOMER_1] owes £1,240.00", ai_written: false } })],
+    });
+    await askExample("Customers", "Who owes the most");
+    const chat = within(await screen.findByRole("list", { name: "Conversation" }));
+    await userEvent.click(await chat.findByRole("button", { name: "What the AI saw" }));
+    expect(chat.getByTestId("ai-saw")).toHaveTextContent("[CUSTOMER_1] owes £1,240.00");
+    expect(chat.queryByText("Checked against your records")).not.toBeInTheDocument();
   });
 
   it("explains a failure and tries again", async () => {

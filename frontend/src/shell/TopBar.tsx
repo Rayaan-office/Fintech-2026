@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useCurrentUser, useLogout } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useMarkNotificationsRead, useNotifications } from "@/api/hooks";
+import { CocentMark } from "@/components/brand";
 import { Initials } from "@/components/Initials";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,7 @@ import { formatRelative } from "@/lib/format";
 import { usePrivacy } from "@/lib/privacy";
 import { rolesText } from "./roles";
 import { keyLabel } from "./shortcuts";
+import { BusinessMenu } from "./Sidebar";
 
 export function TopBar({ onSearch, onShortcuts }: { onSearch: () => void; onShortcuts: () => void }) {
   const me = useCurrentUser();
@@ -29,11 +31,11 @@ export function TopBar({ onSearch, onShortcuts }: { onSearch: () => void; onShor
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
       <span className="flex min-w-0 items-center gap-2 md:hidden">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-[13px] font-semibold text-background" aria-hidden>
-          {me.business.name.trim()[0]?.toUpperCase() ?? "S"}
-        </span>
+        <CocentMark className="size-6" />
         <span className="truncate text-sm font-semibold">{me.business.name}</span>
       </span>
+      <BusinessMenu className="max-md:hidden" />
+      <span className="mx-1 h-6 w-px shrink-0 bg-border max-md:hidden" aria-hidden />
       <button
         type="button"
         onClick={onSearch}

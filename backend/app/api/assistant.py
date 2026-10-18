@@ -5,11 +5,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, StringConstraints
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..copilot import assistant, insights
 from ..models import ChatMessage, ChatThread, Counterparty
+from ..security import audit
 from ..security.http import limiter
 from ..security.rbac import Perm
 from .advice import propose_email
@@ -73,6 +74,18 @@ def thread(thread_id: UUID, p: Principal = Depends(require(Perm.USE_ASSISTANT)),
     msgs = db.execute(select(ChatMessage).where(ChatMessage.thread_id == t.id)
                       .order_by(ChatMessage.created_at)).scalars()
     return {"id": str(t.id), "title": t.title, "messages": [_message_out(m) for m in msgs]}
+
+
+@router.delete("/ask/threads/{thread_id}")
+def delete_thread(thread_id: UUID, p: Principal = Depends(require(Perm.USE_ASSISTANT)), db: Session = Depends(tenant_db)):
+    """Delete one of your own conversations. The activity log keeps that it happened, never what was said."""
+    t = db.get(ChatThread, thread_id)
+    if not t or t.user_id != p.user_id:
+        raise HTTPException(404, "Not found.")
+    n = db.execute(delete(ChatMessage).where(ChatMessage.thread_id == t.id)).rowcount
+    db.delete(t)
+    audit.record(db, p.business_id, p.actor, "conversation_deleted", subject=str(thread_id), details={"messages": n})
+    return {"ok": True}
 
 
 @router.post("/ask/messages/{message_id}/act")

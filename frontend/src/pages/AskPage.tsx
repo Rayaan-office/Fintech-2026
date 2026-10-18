@@ -1,9 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { FileTextIcon, HistoryIcon, PlusIcon, ShieldCheckIcon, SparklesIcon, TruckIcon, UsersIcon, WalletIcon, type LucideIcon } from "lucide-react";
+import { FileTextIcon, HistoryIcon, PlusIcon, ShieldCheckIcon, SparklesIcon, Trash2Icon, TruckIcon, UsersIcon, WalletIcon, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/api/client";
-import { useAsk, useAskStats, useAskThread, useAskThreads } from "@/api/hooks";
+import { useAsk, useAskStats, useAskThread, useAskThreads, useDeleteAskThread } from "@/api/hooks";
 import type { AskMessage, AskReply, AskThread } from "@/api/types";
 import { Answer, Question, Thinking } from "@/components/ask/Answer";
 import { Composer } from "@/components/ask/Composer";
@@ -11,13 +11,15 @@ import { IconTile } from "@/components/kit";
 import { PageHeader } from "@/components/PageHeader";
 import { SidePanel } from "@/components/panels";
 import { ErrorState } from "@/components/states";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** Example questions by topic: a short label on the chip, the full question sent when clicked. */
+/** Example questions by topic: a short label on the chip, the full question put in the box when clicked. */
 const TOPICS: { id: string; label: string; icon: LucideIcon; questions: [label: string, question: string][] }[] = [
   {
     id: "cash",
@@ -76,6 +78,16 @@ function asMessages(question: string, reply: AskReply): AskMessage[] {
   ];
 }
 
+/** Puts a question in the box, ready to edit or send, with the cursor at the end. */
+function focusBox() {
+  requestAnimationFrame(() => {
+    const box = document.getElementById("ask-input") as HTMLTextAreaElement | null;
+    if (!box) return;
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  });
+}
+
 const turn = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.2 } };
 
 export default function AskPage() {
@@ -118,6 +130,11 @@ export default function AskPage() {
     );
   };
 
+  const pick = (question: string) => {
+    setDraft(question);
+    focusBox();
+  };
+
   const openThread = (id: string | null) => {
     if (ask.isPending) return;
     setThreadId(id);
@@ -147,7 +164,7 @@ export default function AskPage() {
       />
 
       {empty ? (
-        <EmptyAsk draft={draft} setDraft={setDraft} onSend={send} pending={ask.isPending} />
+        <EmptyAsk draft={draft} setDraft={setDraft} onSend={send} onPick={pick} pending={ask.isPending} />
       ) : (
         <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-1 flex-col gap-2">
           <div className="min-w-0 flex-1">
@@ -160,7 +177,7 @@ export default function AskPage() {
                 <AnimatePresence initial={false}>
                   {messages.map((m) => (
                     <motion.li key={m.id} {...turn} className="grid min-w-0">
-                      {m.role === "user" ? <Question text={m.text} /> : <Answer message={m} latest={m.id === lastAnswerId && !pending} onFollowUp={send} />}
+                      {m.role === "user" ? <Question text={m.text} /> : <Answer message={m} latest={m.id === lastAnswerId && !pending} onFollowUp={pick} />}
                     </motion.li>
                   ))}
                   {pending && (
@@ -183,14 +200,26 @@ export default function AskPage() {
       )}
 
       <SidePanel open={historyOpen} onOpenChange={setHistoryOpen} title="History">
-        <ThreadList current={threadId} onOpen={openThread} disabled={ask.isPending} />
+        <ThreadList current={threadId} onOpen={openThread} onDeleted={(id) => id === threadId && openThread(null)} disabled={ask.isPending} />
       </SidePanel>
     </div>
   );
 }
 
 /** The first thing you see: one question box in the middle, a few examples under it. */
-function EmptyAsk({ draft, setDraft, onSend, pending }: { draft: string; setDraft: (v: string) => void; onSend: (q: string) => void; pending: boolean }) {
+function EmptyAsk({
+  draft,
+  setDraft,
+  onSend,
+  onPick,
+  pending,
+}: {
+  draft: string;
+  setDraft: (v: string) => void;
+  onSend: (q: string) => void;
+  onPick: (q: string) => void;
+  pending: boolean;
+}) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-7 pb-[8vh]">
       <div className="grid justify-items-center gap-3 text-center">
@@ -220,7 +249,7 @@ function EmptyAsk({ draft, setDraft, onSend, pending }: { draft: string; setDraf
                   key={label}
                   type="button"
                   title={question}
-                  onClick={() => onSend(question)}
+                  onClick={() => onPick(question)}
                   className="rounded-full border bg-card px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-foreground/20 hover:bg-accent"
                 >
                   {label}
@@ -260,7 +289,17 @@ function ConversationSkeleton() {
   );
 }
 
-function ThreadList({ current, onOpen, disabled }: { current: string | null; onOpen: (id: string | null) => void; disabled: boolean }) {
+function ThreadList({
+  current,
+  onOpen,
+  onDeleted,
+  disabled,
+}: {
+  current: string | null;
+  onOpen: (id: string | null) => void;
+  onDeleted: (id: string) => void;
+  disabled: boolean;
+}) {
   const threads = useAskThreads();
   const items = threads.data?.items ?? [];
   return (
@@ -279,24 +318,80 @@ function ThreadList({ current, onOpen, disabled }: { current: string | null; onO
       ) : (
         <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {items.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => onOpen(t.id)}
-                disabled={disabled}
-                aria-current={t.id === current ? "true" : undefined}
-                className={cn(
-                  "flex w-full items-baseline gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent disabled:opacity-50",
-                  t.id === current && "bg-accent",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{formatRelative(t.created_at)}</span>
-              </button>
-            </li>
+            <ThreadRow key={t.id} id={t.id} title={t.title} at={t.created_at} current={t.id === current} onOpen={onOpen} onDeleted={onDeleted} disabled={disabled} />
           ))}
         </ul>
       )}
     </nav>
+  );
+}
+
+/** One earlier conversation: open it, or delete it after a quick check. */
+function ThreadRow({
+  id,
+  title,
+  at,
+  current,
+  onOpen,
+  onDeleted,
+  disabled,
+}: {
+  id: string;
+  title: string;
+  at: string;
+  current: boolean;
+  onOpen: (id: string) => void;
+  onDeleted: (id: string) => void;
+  disabled: boolean;
+}) {
+  const del = useDeleteAskThread();
+  const [confirming, setConfirming] = useState(false);
+  const remove = () =>
+    del.mutate(id, {
+      onSuccess: () => {
+        setConfirming(false);
+        onDeleted(id);
+        toast.success("Conversation deleted");
+      },
+      onError: (e) => toast.error(errorMessage(e)),
+    });
+  return (
+    <li className={cn("group flex items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-accent", (current || confirming) && "bg-accent")}>
+      <button
+        type="button"
+        onClick={() => onOpen(id)}
+        disabled={disabled}
+        aria-current={current ? "true" : undefined}
+        className="flex min-w-0 flex-1 items-baseline gap-3 rounded-lg py-2 pl-2.5 text-left disabled:opacity-50"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatRelative(at)}</span>
+      </button>
+      <Popover open={confirming} onOpenChange={setConfirming}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 text-muted-foreground hover:text-danger focus-visible:opacity-100 data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+            aria-label={`Delete conversation: ${title}`}
+            disabled={disabled}
+          >
+            <Trash2Icon className="size-3.5" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-60 p-3">
+          <p className="text-sm font-medium">Delete this conversation?</p>
+          <p className="mt-1 text-xs text-muted-foreground">It can't be brought back.</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button size="xs" variant="destructive" onClick={remove} disabled={del.isPending}>
+              Delete
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </li>
   );
 }
