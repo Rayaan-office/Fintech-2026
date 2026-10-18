@@ -2,12 +2,13 @@
 
 import json
 import re
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import actions, archive
@@ -139,6 +140,9 @@ def get_document(document_id: UUID, p: Principal = Depends(current_principal), d
                       "problems": e.checks.get("problems", []), "provider": e.checks.get("provider")} for e in exts],
         "actions": [action_out(db, a, p) for a in pending],
         "record_id": str(d.record_id) if d.record_id else None,
+        "learned": {k: {"value": v.get("value"), "ai_value": v.get("ai_value"), "corrections": v.get("corrections"),
+                        "learned_as": v.get("learned_as"), "undone": bool(v.get("undone"))}
+                    for k, v in (d.learned or {}).items()},
     }
 
 
@@ -163,7 +167,8 @@ class FieldEdit(BaseModel):
 @router.post("/{document_id}/fields")
 def correct(document_id: UUID, body: FieldEdit, p: Principal = Depends(require(Perm.REVIEW_DOCUMENTS)),
             db: Session = Depends(tenant_db)):
-    """A person corrects the extracted values. The AI's original answer is kept beside each correction."""
+    """A person corrects the extracted values. The AI's original answer is kept beside each correction,
+    even when a field is corrected more than once."""
     d = _get(db, p, document_id)
     if d.status in ("approved", "rejected"):
         raise HTTPException(409, "This document has already been decided.")
@@ -171,16 +176,27 @@ def correct(document_id: UUID, body: FieldEdit, p: Principal = Depends(require(P
     if bad:
         raise HTTPException(422, "These fields can't be edited: " + ", ".join(sorted(bad)))
     fields = dict(d.fields or {})
+    learned = {k: dict(v) for k, v in (d.learned or {}).items()}
+    ai_first = {}  # the AI's own answer for fields already corrected on this document
+    for c in db.execute(select(Correction).where(Correction.document_id == d.id)
+                        .order_by(Correction.created_at.desc())).scalars():
+        ai_first[c.field] = c.ai_value
+    changed = []
     for k, v in body.fields.items():
         v = v.strip()[:300]
         if k in ("subtotal", "tax", "total") and v and to_minor(v) is None:
             raise HTTPException(422, f"{k} must be an amount like 120.50.")
         if k in ("issue_date", "due_date") and v and not to_date(v):
             raise HTTPException(422, f"{k} must be a date like 2026-10-30.")
-        db.add(Correction(business_id=d.business_id, document_id=d.id, field=k, ai_value=str(fields.get(k, "")),
-                          human_value=v, user_id=p.user_id))
+        if v == str(fields.get(k) or ""):
+            continue
+        ai = ai_first[k] if k in ai_first else learned[k]["ai_value"] if k in learned else str(fields.get(k) or "")
+        changed.append((k, ai, v))
+        if k in learned:
+            learned[k]["undone"] = v != learned[k]["value"]  # a filled-in value the person changed
         fields[k] = v
     d.fields = fields
+    d.learned = learned
     audit.record(db, d.business_id, p.actor, "fields_corrected", subject=f"document:{d.id}",
                  details={"fields": sorted(body.fields)})
     if d.status == "review":
@@ -198,7 +214,78 @@ def correct(document_id: UUID, body: FieldEdit, p: Principal = Depends(require(P
                         effects=[f"Add a {d.doc_type} to the ledger"], amount_minor=total,
                         reasons=["Checked and corrected by a person."])
         d.status = "awaiting_approval"
+    elif d.status == "awaiting_approval" and changed:
+        _refresh_approval(db, p, d, fields)
+    for k, ai, v in changed:
+        db.add(Correction(business_id=d.business_id, document_id=d.id, field=k, ai_value=ai, human_value=v,
+                          user_id=p.user_id, counterparty_id=d.counterparty_id))
+    # Earlier corrections follow the document to its corrected supplier
+    db.execute(update(Correction).where(Correction.document_id == d.id)
+               .values(counterparty_id=d.counterparty_id))
+    db.flush()
     return get_document(document_id, p, db)
+
+
+def _refresh_approval(db: Session, p: Principal, d: Document, fields: dict) -> None:
+    """Values changed while the document waits for approval. The waiting approval is replaced, so the
+    approver sees the corrected supplier and amount and the bill is recorded against the right supplier.
+    A bank-detail check is never dropped: it moves to the corrected supplier and still needs two people."""
+    from ..pipeline.counterparties import compare, find_or_create, latest_details
+
+    waiting = db.execute(select(Action).where(Action.type == "approve_document", Action.status == "pending",
+                                              Action.payload["document_id"].astext == str(d.id))).scalars().all()
+    if not waiting:
+        return
+    old = waiting[0]
+    kind = "customer" if fields.get("doc_type") == "invoice" else "supplier"
+    cp, is_new = find_or_create(db, d.business_id, kind, fields.get("counterparty_name") or "Unknown")
+    d.counterparty_id = cp.id if cp else None
+    d.doc_type = fields.get("doc_type") or d.doc_type or "bill"
+    payload = dict(old.payload)
+    reasons = [r for r in old.reasons if r != CORRECTED]
+    if payload.get("counterparty_id") != (str(cp.id) if cp else None):
+        payload["counterparty_id"] = str(cp.id) if cp else None
+        details = payload.get("details") or {}
+        bank = db.get(Action, UUID(payload["bank_change_action_id"])) if payload.get("bank_change_action_id") else None
+        moved = bank is not None and bank.status == "pending"
+        if moved:
+            _cancel(db, p, bank, "The supplier was corrected, so the bank-detail check moved to the right one.")
+        changed_bank = cp is not None and any(c["bank"] for c in compare(latest_details(db, cp.id), details))
+        if cp and (moved or changed_bank):
+            bank = actions.propose(
+                db, d.business_id, "change_supplier_bank", requested_by=p.actor,
+                payload={"counterparty_id": str(cp.id), "document_id": str(d.id), "details": details},
+                summary=f"Confirm new bank details for {cp.display_name}",
+                effects=[f"{k.replace('_', ' ')}: {v.get('display')}" for k, v in details.items()
+                         if k in ("bank_account", "sort_code")],
+                reasons=["Bank details changed: confirm with the supplier using the contact details already on record."])
+            payload["bank_change_action_id"] = str(bank.id)
+        elif bank is None or bank.status != "executed":
+            payload["bank_change_action_id"] = None
+        if is_new:
+            reasons.append(f"This is a new {kind}.")
+    for a in waiting:
+        _cancel(db, p, a, "Replaced by the corrected version.")
+    total = to_minor(fields.get("total"))
+    currency = (fields.get("currency") or "GBP").upper()
+    amount = f"£{(total or 0) / 100:,.2f}" if currency == "GBP" else f"{fields.get('total')} {currency}"
+    actions.propose(db, d.business_id, "approve_document", requested_by=p.actor, payload=payload,
+                    summary=f"Record {d.doc_type.replace('_', ' ')}: {amount} from {fields.get('counterparty_name')}"
+                            + (f", due {fields['due_date']}" if fields.get("due_date") else ""),
+                    effects=[f"Add a {d.doc_type.replace('_', ' ')} of {amount} to the ledger",
+                             "Match it to payments and bank records"],
+                    amount_minor=total, reasons=[*reasons, CORRECTED])
+
+
+CORRECTED = "Corrected by a person while it waited for approval."
+
+
+def _cancel(db: Session, p: Principal, a: Action, why: str) -> None:
+    a.status = "cancelled"
+    a.decided_at = datetime.now(UTC)
+    a.result = {"reason": why}
+    audit.record(db, a.business_id, p.actor, "action_cancelled", subject=f"action:{a.id}",
+                 details={"type": a.type, "reason": "document_corrected"})
 
 
 @router.post("/{document_id}/reprocess")

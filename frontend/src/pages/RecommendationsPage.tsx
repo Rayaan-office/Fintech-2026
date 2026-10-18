@@ -13,13 +13,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { useCan, useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
-import { useDismissRecommendation, useDraftNextStep, useRecommendations, useRefreshRecommendations } from "@/api/hooks";
-import type { Action, Recommendation, RecommendationType, RecommendationsRun } from "@/api/types";
+import { useDismissRecommendation, useDraftNextStep, useFollowRecommendation, useRecommendations, useRefreshRecommendations } from "@/api/hooks";
+import type { Action, RankedRecommendation, Recommendation, RecommendationType, RecommendationsRun } from "@/api/types";
 import { ActionConfirmation } from "@/components/ActionConfirmation";
 import { Worded } from "@/components/AiText";
 import { Initials } from "@/components/Initials";
@@ -71,9 +71,44 @@ export default function RecommendationsPage() {
         }
       />
       <QueryView query={recs} loading={<ListSkeleton rows={4} />} empty={<NoRecommendations />}>
-        {(data) => (data.items.length === 0 ? <NoRecommendations /> : <RecommendationList items={data.items} />)}
+        {(data) => (data.items.length === 0 ? <NoRecommendations /> : <RankedList items={data.items} />)}
       </QueryView>
     </div>
+  );
+}
+
+/** Kinds you rarely act on sit folded at the end, never hidden. Urgent ones are never folded. */
+function RankedList({ items }: { items: RankedRecommendation[] }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const shown = items.filter((r) => !r.less_useful);
+  const folded = items.filter((r) => r.less_useful);
+  return (
+    <>
+      {shown.length > 0 && <RecommendationList items={shown} />}
+      {folded.length > 0 && (
+        <section aria-label="Less useful to you" className="grid gap-4">
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => setOpen((o) => !o)}
+            className="flex min-w-0 items-center gap-3 rounded-xl border border-dashed px-4 py-3 text-left text-sm hover:bg-accent/60"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">Less useful to you ({folded.length})</span>
+              <span className="block text-muted-foreground">Kinds you've rarely acted on. We keep them here in case you need them.</span>
+            </span>
+            <ChevronDownIcon className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
+          </button>
+          {open && (
+            <div id={panelId}>
+              <RecommendationList items={folded} />
+            </div>
+          )}
+        </section>
+      )}
+    </>
   );
 }
 
@@ -205,6 +240,7 @@ function SeverityBadge({ severity }: { severity: Recommendation["severity"] }) {
 /** The one next step: draft the email, open the draft already waiting, or go to the page that helps. */
 function NextStep({ rec, drafting, onDraft }: { rec: Recommendation; drafting: boolean; onDraft: () => void }) {
   const can = useCan();
+  const follow = useFollowRecommendation();
   const step = rec.next_step;
   if (!step) return null;
   if (step.kind) {
@@ -233,7 +269,9 @@ function NextStep({ rec, drafting, onDraft }: { rec: Recommendation; drafting: b
     const page = PAGES[step.href];
     return (
       <Button asChild className="h-auto min-h-9 max-w-full whitespace-normal py-2 text-left" variant={rec.severity === "info" ? "secondary" : "default"}>
-        <Link to={step.href}>{step.label === "For information" && page ? `Open ${page}` : step.label}</Link>
+        <Link to={step.href} onClick={() => follow.mutate(rec.id)}>
+          {step.label === "For information" && page ? `Open ${page}` : step.label}
+        </Link>
       </Button>
     );
   }

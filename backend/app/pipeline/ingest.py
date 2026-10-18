@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from .. import actions, archive, events
 from ..ai import gateway
+from ..copilot import learning
 from ..db import global_session, tenant_session
 from ..models import Business, Connection, Document, Extraction
 from ..privacy.redact import PrivacyBlock, Redacted, final_scan, mask, redact, restore, store_in_vault, \
@@ -251,8 +252,10 @@ def propose(state: State) -> State:
         real = vault_values(bid, list(ph_to_vid.values()))
         ph_to_real = {ph: real.get(vid, ph) for ph, vid in ph_to_vid.items()}
         fields = restore(form.model_dump(), ph_to_real)
+        # Values learned from past corrections, from our own records: nothing extra goes to the AI
+        filled = learning.fill(db, fields)
 
-        kind = "customer" if form.doc_type == "invoice" else "supplier"
+        kind = "customer" if fields["doc_type"] == "invoice" else "supplier"
         cp, is_new = counterparties.find_or_create(db, bid, kind, fields["counterparty_name"], doc.sender_domain)
 
         # Details on this document, as fingerprints and masked display values
@@ -281,7 +284,8 @@ def propose(state: State) -> State:
             if display.get(f):
                 display[f] = mask(label, display[f])
         doc.fields = display
-        doc.doc_type = form.doc_type
+        doc.learned = filled
+        doc.doc_type = fields["doc_type"]
         doc.counterparty_id = cp.id if cp else None
         doc.warnings = warnings
         reasons = [w["label"] + ": " + w["detail"] for w in warnings]
@@ -289,6 +293,9 @@ def propose(state: State) -> State:
             reasons.append("This is a new " + kind + ".")
         if state.get("attempt", 1) > 1:
             reasons.append("The AI needed more than one attempt.")
+        check = learning.needs_check(filled)
+        if check:
+            reasons.append("Filled from your past corrections, please check: " + ", ".join(check) + ".")
 
         bank_action = None
         if any(w["kind"] == "bank_details_changed" for w in warnings) and cp:
@@ -300,15 +307,16 @@ def propose(state: State) -> State:
                 reasons=["Bank details changed: confirm with the supplier using the contact details already on record."],
             )
         verb = {"bill": "Record bill", "invoice": "Record invoice", "receipt": "Record receipt",
-                "credit_note": "Record credit note"}.get(form.doc_type, "File document")
-        amount_txt = f"£{(total or 0) / 100:,.2f}" if (form.currency or "").upper() == "GBP" else f"{form.total} {form.currency}"
+                "credit_note": "Record credit note"}.get(fields["doc_type"], "File document")
+        currency = (fields["currency"] or "").upper()
+        amount_txt = f"£{(total or 0) / 100:,.2f}" if currency == "GBP" else f"{form.total} {currency}"
         action = actions.propose(
             db, bid, "approve_document", requested_by="ai:ingestion",
             payload={"document_id": str(did), "counterparty_id": str(cp.id) if cp else None,
                      "details": new_details, "bank_change_action_id": str(bank_action.id) if bank_action else None},
             summary=f"{verb}: {amount_txt} from {fields['counterparty_name']}"
-                    + (f", due {form.due_date}" if form.due_date else ""),
-            effects=[f"Add a {form.doc_type.replace('_', ' ')} of {amount_txt} to the ledger",
+                    + (f", due {fields['due_date']}" if fields["due_date"] else ""),
+            effects=[f"Add a {fields['doc_type'].replace('_', ' ')} of {amount_txt} to the ledger",
                      "Match it to payments and bank records"],
             amount_minor=total, reasons=reasons,
             auto_ok=not is_new and not warnings and state.get("attempt", 1) == 1,
@@ -316,8 +324,10 @@ def propose(state: State) -> State:
         doc.status = "approved" if action.status == "executed" else "awaiting_approval"
         doc.review_reasons = reasons
         status = doc.status
-    _step(state, "done", note="Recorded automatically" if status == "approved" else "Waiting for approval",
-          status=status)
+    note = "Recorded automatically" if status == "approved" else "Waiting for approval"
+    if filled:
+        note += f"; {len(filled)} value(s) filled from your past corrections"
+    _step(state, "done", note=note, status=status)
     return {**state, "outcome": "accepted"}
 
 

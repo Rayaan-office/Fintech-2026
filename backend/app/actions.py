@@ -91,6 +91,16 @@ def _execute(db: Session, action: Action, actor: str) -> None:
     action.decided_at = datetime.now(UTC)
     audit.record(db, action.business_id, actor, f"action_{action.status}", subject=f"action:{action.id}",
                  details={"type": action.type, "level": action.level, "amount_minor": action.amount_minor})
+    if action.status == "executed":
+        _learn(db, action, True, actor)
+
+
+def _learn(db: Session, action: Action, won: bool, actor: str) -> None:
+    """An action drafted from a recommendation teaches the ranking whether it was useful."""
+    if (action.payload or {}).get("recommendation_id"):
+        from .copilot import learning
+
+        learning.reward_action(db, action, won, actor)
 
 
 def _may_approve(p, action: Action) -> str | None:
@@ -133,6 +143,7 @@ def decide(db: Session, p, action_id, decision: str) -> Action:
         action.decided_at = datetime.now(UTC)
         if action.type in _on_reject:
             _on_reject[action.type](db, action, p.actor)
+        _learn(db, action, False, p.actor)
     else:
         approvals = db.execute(select(Approval).where(Approval.action_id == action.id,
                                                       Approval.decision == "approve")).scalars().all()

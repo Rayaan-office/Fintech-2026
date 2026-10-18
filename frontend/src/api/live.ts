@@ -60,3 +60,6 @@ export function useLiveUpdates(enabled = true) {
     };
   }, [enabled, qc]);
 }
+
+// Learning from decisions: decisions and newly read documents change what we've learned
+for (const kind of ["action", "document", "recommendations"]) AFFECTS[kind]?.push("learning");

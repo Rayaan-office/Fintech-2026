@@ -1,5 +1,6 @@
 import {
   ActivityIcon,
+  BrainCircuitIcon,
   ChartColumnIcon,
   FileTextIcon,
   HouseIcon,
@@ -39,6 +40,7 @@ export const NAV: NavItem[] = [
   { to: "/documents", label: "Documents", icon: FileTextIcon, perm: "view_all", place: "main" },
   { to: "/activity", label: "Activity", icon: ActivityIcon, perm: "view_activity", place: "main" },
   { to: "/my-receipts", label: "My receipts", icon: ReceiptIcon, perm: "submit_receipt", place: "main", phone: true, onlyWithout: "view_all" },
+  { to: "/learning", label: "What we've learned", icon: BrainCircuitIcon, perm: "view_all", place: "bottom" },
   { to: "/connections", label: "Connections", icon: PlugIcon, perm: "view_all", place: "bottom" },
   { to: "/settings", label: "Settings", icon: SettingsIcon, perm: null, place: "bottom", phone: true },
 ];

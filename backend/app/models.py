@@ -214,6 +214,8 @@ class Document(Base):
     # Text exactly as sent to the AI (placeholders only) — the "What the AI saw" view
     redacted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     placeholder_map: Mapped[dict] = mapped_column(JSONB, default=dict)  # placeholder -> vault id
+    # Fields filled from past corrections: {field: {"value": ..., "ai_value": ..., "corrections": n, "undone": bool}}
+    learned: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -241,6 +243,10 @@ class Correction(Base):
     ai_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    # The supplier or customer the document belongs to, so we can learn per supplier
+    counterparty_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Set when the owner resets what we learned: the correction is kept but no longer learned from
+    forgotten_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created()
 
 
@@ -475,9 +481,27 @@ class ProcessedEvent(Base):
     at: Mapped[datetime] = _created()
 
 
+# ── Learning from decisions ────────────────────────────────────────────────
+
+
+class LearningStat(Base):
+    """How often a kind of recommendation was acted on (wins) or turned down (losses)."""
+
+    __tablename__ = "learning_stats"
+    __table_args__ = (UniqueConstraint("business_id", "arm"),)
+    id: Mapped[uuid.UUID] = _id()
+    business_id: Mapped[uuid.UUID] = _bid()
+    arm: Mapped[str] = mapped_column(String(60))  # a recommendation kind
+    wins: Mapped[int] = mapped_column(Integer, default=0)
+    losses: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 TENANT_TABLES = [
     "connections", "accounts", "counterparties", "counterparty_versions", "documents", "extractions",
     "corrections", "records", "matches", "actions", "approvals", "recommendations", "mutes",
     "planned_items", "business_profiles", "chat_threads", "chat_messages", "ai_calls", "notifications",
     "handoff_tokens", "audit_log", "processed_events",
+    # Learning from decisions
+    "learning_stats",
 ]

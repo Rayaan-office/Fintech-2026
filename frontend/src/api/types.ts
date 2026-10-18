@@ -564,3 +564,54 @@ export type SearchResult = { id: string; kind: string; label: string; href: stri
 // Settings
 
 export type TeamMember = { id: string; name: string; email: string; roles: Role[]; approval_limit_minor: number | null; second_approver: boolean };
+
+// Learning from decisions
+
+/** A value we filled in from past corrections, shown beside the field with Undo. */
+export type LearnedField = {
+  value: string;
+  /** What the AI read, which Undo puts back. */
+  ai_value: string;
+  corrections: number;
+  learned_as: "category_hint" | "doc_type" | "currency" | "payment_terms" | "counterparty_name";
+  /** The person changed it afterwards. */
+  undone: boolean;
+};
+
+export type DocumentWithLearning = DocumentDetail & { learned?: Record<string, LearnedField> };
+
+/** A kind acted on rarely is folded under "Less useful to you". Urgent ones never are. */
+export type RankedRecommendation = Recommendation & { less_useful?: boolean };
+
+export type LearnedItem = { field: LearnedField["learned_as"]; label: string; value: string | number; value_label: string; corrections: number; sentence: string };
+
+export type LearnedKind = { kind: string; label: string; acted_on: number; turned_down: number; decisions: number; acted_share: number; less_useful: boolean; sentence: string };
+
+export type LearningSummary = {
+  suppliers: { counterparty_id: string; name: string; kind: "supplier" | "customer"; items: LearnedItem[] }[];
+  recommendations: LearnedKind[];
+  numbers: {
+    fields_filled: number;
+    fields_kept: number;
+    fields_undone: number;
+    documents_helped: number;
+    seconds_per_field: number;
+    minutes_saved: number;
+    decisions: number;
+    acted_on: number;
+    acted_share: number | null;
+    top_decisions: number;
+    top_acted_on: number;
+    top_acted_share: number | null;
+  };
+  rules: { learn_after: number; fold_after: number; fold_below: number };
+  assumptions: string[];
+  never_learned: string[];
+  can_reset: boolean;
+};
+
+export type LearningReset =
+  | { scope: "all" }
+  | { scope: "supplier"; counterparty_id: string }
+  | { scope: "field"; counterparty_id: string; field: LearnedField["learned_as"] }
+  | { scope: "kind"; kind: string };
