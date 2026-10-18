@@ -1,4 +1,21 @@
-import type { Action, AskReply, DocumentDetail, DocumentSummary, Financing, FinancingQuote, Me, Recommendation } from "@/api/types";
+import type {
+  Action,
+  AskReply,
+  BusinessHealth,
+  CashFlow,
+  CashPosition,
+  DocumentDetail,
+  DocumentSummary,
+  Financing,
+  FinancingQuote,
+  ForecastPoint,
+  HomeSummary,
+  Me,
+  Recommendation,
+  WhatIfInput,
+  WhatIfResult,
+  WhyCashChanged,
+} from "@/api/types";
 
 /* Shapes copied from what the API returns (backend/app/api), so the screens are tested against the real contract. */
 
@@ -257,6 +274,195 @@ export function askReply(over: Partial<AskReply> = {}): AskReply {
     ],
     follow_ups: ["When did Bright Cafe last pay?", "What does my cash look like next month?"],
     suggestion: { type: "send_payment_reminder", counterparty_id: "c9", label: "Draft a payment reminder to Bright Cafe" },
+    ...over,
+  };
+}
+
+// Stage 6 and F4: cash, forecast, what-if, why cash changed, business health and Home (backend/app/api/insights.py)
+
+export const TODAY = "2026-10-18";
+
+function day(n: number): string {
+  return new Date(Date.UTC(2026, 9, 18 + n)).toISOString().slice(0, 10);
+}
+
+/** 91 days from today: down to £7,505.00 on 2 December, then back up. */
+export function forecastSeries(shift = 0): ForecastPoint[] {
+  return Array.from({ length: 91 }, (_, i) => {
+    const expected = (i <= 45 ? 1500000 - Math.round((i * 749500) / 45) : 750500 + (i - 45) * 12000) + shift;
+    const band = Math.round(30000 * Math.sqrt(i));
+    return { date: day(i), expected_minor: expected, best_minor: expected + band, worst_minor: expected - band };
+  });
+}
+
+export function cashFlow(over: Partial<CashFlow> = {}): CashFlow {
+  const series = forecastSeries();
+  return {
+    today: TODAY,
+    currency: "GBP",
+    balance_minor: 1500000,
+    safety_level_minor: 1000000,
+    safety_level_why: "Two weeks of your usual spending (£64,285.71 went out in the last 90 days)",
+    lowest: { balance_minor: 750500, date: "2026-12-02" },
+    worst_lowest: { balance_minor: 548000, date: "2026-12-02" },
+    horizons: { "7": series[7]!.expected_minor, "30": series[30]!.expected_minor, "60": series[60]!.expected_minor, "90": series[90]!.expected_minor },
+    series,
+    bills: [
+      { id: "repeat:text:payroll:out:2026-10-31", date: "2026-10-31", label: "Payroll", amount_minor: 640000, movable: false },
+      { id: "bill:b1", date: "2026-11-01", label: "Acme Supplies bill AS-1005", amount_minor: 65856, movable: true },
+      { id: "bill:b2", date: "2026-11-05", label: "BrightSpark Energy bill BS-77", amount_minor: 42000, movable: true },
+      { id: "vat:2026-11-07", date: "2026-11-07", label: "VAT (estimated)", amount_minor: 310000, movable: false },
+    ],
+    items: [
+      {
+        id: "invoice:i1", label: "Bright Cafe invoice INV-1042", kind: "invoice", amount_minor: 124000, expected: "2026-10-25", best: "2026-10-22",
+        worst: "2026-10-28", why: "Due 20 October; Bright Cafe usually pays 5 days after the due date", record_ids: ["i1"],
+      },
+      { id: "bill:b1", label: "Acme Supplies bill AS-1005", kind: "bill", amount_minor: -65856, expected: "2026-11-01", best: "2026-11-01", worst: "2026-11-01", why: "Due 1 November", record_ids: ["b1"] },
+    ],
+    repeating: [{ label: "Payroll", every: "month", amount_minor: -640000, last: "2026-09-30", times: 6 }],
+    everyday_minor_per_week: -84000,
+    warnings: [
+      {
+        id: "cash-safety-2026-11-12", grade: "warning", severity: "attention",
+        sentence: "VAT (estimated) on 7 November will take you below your safety level in 25 days.",
+        why: "We expect £9,920.00 on 12 November, against a safety level of £10,000.00. Biggest payments in the week before: VAT (estimated) £3,100.00 (7 November).",
+        date: "2026-11-12", days: 25, balance_minor: 992000, item_ids: ["vat:2026-11-07"],
+      },
+    ],
+    left_out: [],
+    ...over,
+  };
+}
+
+/** The what-if answer: a planned cost lowers the low point by its amount; a bill left out or moved raises it by its amount. */
+export function whatIfResult(body: WhatIfInput, base: CashFlow = cashFlow()): WhatIfResult {
+  const planned = body.planned.reduce((s, p) => s + p.amount_minor, 0);
+  const excluded = base.bills.filter((b) => body.excluded_bill_ids.includes(b.id)).reduce((s, b) => s + b.amount_minor, 0);
+  const moved = base.bills.filter((b) => body.moved_bills.some((m) => m.id === b.id)).reduce((s, b) => s + b.amount_minor, 0);
+  const shift = excluded + moved - planned;
+  const lowest = { balance_minor: base.lowest.balance_minor + shift, date: base.lowest.date };
+  return {
+    ...base,
+    series: forecastSeries(shift),
+    lowest,
+    bills: base.bills.map((b) => ({ ...b, date: body.moved_bills.find((m) => m.id === b.id)?.date ?? b.date })),
+    what_if: {
+      lowest_before: base.lowest,
+      lowest_after: lowest,
+      worst_lowest_after: { balance_minor: base.worst_lowest.balance_minor + shift, date: base.worst_lowest.date },
+      below_safety: lowest.balance_minor < base.safety_level_minor,
+      worst_below_safety: true,
+      shortfall_minor: Math.max(0, base.safety_level_minor - lowest.balance_minor),
+      worst_shortfall_minor: Math.max(0, base.safety_level_minor - base.worst_lowest.balance_minor - shift),
+    },
+  };
+}
+
+export function whyCash(over: Partial<WhyCashChanged> = {}): WhyCashChanged {
+  return {
+    period: "month",
+    this_period: { from: "2026-10-01", to: TODAY, net_minor: -182000 },
+    last_period: { from: "2026-09-01", to: "2026-09-18", net_minor: 96000 },
+    change_minor: -278000,
+    reasons: [
+      {
+        group: "customers", label: "Customer payments", change_minor: -210000, this_period_minor: 420000, last_period_minor: 630000,
+        items: [{ label: "Bright Cafe", change_minor: -124000 }, { label: "Hill Farm Shop", change_minor: -86000 }],
+        late_this_period_minor: 210000, late_last_period_minor: 0,
+      },
+      { group: "suppliers", label: "Supplier costs", change_minor: -98000, this_period_minor: -398000, last_period_minor: -300000, items: [{ label: "Acme Supplies", change_minor: -98000 }] },
+      { group: "card", label: "Card sales", change_minor: 30000, this_period_minor: 530000, last_period_minor: 500000, items: [{ label: "Card sales payouts", change_minor: 30000 }] },
+    ],
+    sentence: "From 1 Oct to 18 Oct, cash did £2,780.00 worse than 1 Sep to 18 Sep. The main reasons: customer payments (−£2,100.00), supplier costs (−£980.00).",
+    explanation: {
+      text: "Cash did £2,780.00 worse than the same days last month. Customers paid £2,100.00 less, and £2,100.00 of invoices that fell due are still unpaid.",
+      redacted_input: "this period: 2026-10-01 to 2026-10-18\nreasons, largest first: [CUSTOMER_1] £1,240.00",
+      ai_written: true,
+    },
+    ...over,
+  };
+}
+
+export function cashPosition(over: Partial<CashPosition> = {}): CashPosition {
+  return {
+    currency: "GBP",
+    balance_minor: 1500000,
+    as_of: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    accounts: [
+      { id: "acc1", name: "Business current account", source: "plaid", mask: "4421", currency: "GBP", balance_minor: 1320000, counted: true },
+      { id: "acc2", name: "Payment platform balance", source: "stripe", mask: null, currency: "GBP", balance_minor: 180000, counted: true },
+    ],
+    platform_minor: 180000,
+    left_out: [],
+    ...over,
+  };
+}
+
+export function homeSummary(over: Partial<HomeSummary> = {}): HomeSummary {
+  const cf = cashFlow();
+  return {
+    today: [
+      { id: "cash-safety-2026-11-12", sentence: cf.warnings[0]!.sentence, action_label: "See cash flow", href: "/cash-flow", level: 0, severity: "attention" },
+      { id: "approvals", sentence: "2 items need your approval.", action_label: "Open inbox", href: "/inbox", level: 0, severity: "attention" },
+      { id: "short-runway", sentence: "At the current rate, cash lasts about 2.4 months.", action_label: "See business health", href: "/health", level: 0, severity: "urgent" },
+    ],
+    cash: { balance_minor: 1500000, as_of: cashPosition().as_of, forecast: cf.series.slice(0, 31), lowest: cf.lowest, horizons: cf.horizons },
+    bills_due: { count: 2, total_minor: 107856, next_due_date: "2026-10-21" },
+    who_owes_you: { count: 3, total_minor: 252000, overdue_minor: 86000 },
+    recommendations: { count: 2, at_stake_minor: 147600 },
+    ...over,
+  };
+}
+
+export function businessHealth(over: Partial<BusinessHealth> = {}): BusinessHealth {
+  const months = [
+    ["2026-04", "Apr 2026 (part)", 980000, 760000, false],
+    ["2026-05", "May 2026", 1820000, 1490000, true],
+    ["2026-06", "Jun 2026", 1910000, 1560000, true],
+    ["2026-07", "Jul 2026", 1880000, 1610000, true],
+    ["2026-08", "Aug 2026", 1950000, 1700000, true],
+    ["2026-09", "Sep 2026", 2010000, 1780000, true],
+    ["2026-10", "Oct 2026 (so far)", 1100000, 1020000, false],
+  ] as const;
+  return {
+    period_label: "Jul 2026 to Sep 2026",
+    sales_minor: 5840000,
+    profit_minor: 750000,
+    margin_pct: 12.8,
+    days_to_get_paid: 34.6,
+    runway_months: 2.4,
+    monthly_net_minor: -620000,
+    profit_and_loss: months.map(([month, label, sales, costs, complete]) => ({
+      month, label, sales_minor: sales, costs_minor: costs, profit_minor: sales - costs,
+      margin_pct: Math.round(((sales - costs) / sales) * 1000) / 10, complete,
+    })),
+    spending: [
+      { category: "Stock", amount_minor: 2310000 },
+      { category: "Salaries", amount_minor: 1920000 },
+      { category: "Rent", amount_minor: 540000 },
+      { category: "Utilities", amount_minor: 126000 },
+    ],
+    top_suppliers: [
+      { name: "Acme Supplies", amount_minor: 1640000 },
+      { name: "Northern Packaging", amount_minor: 410000 },
+      { name: "BrightSpark Energy", amount_minor: 126000 },
+    ],
+    who_owes_you: [
+      { bucket: "Not yet due", amount_minor: 124000 },
+      { bucket: "1–30 days overdue", amount_minor: 42000 },
+      { bucket: "31–60 days overdue", amount_minor: 86000 },
+      { bucket: "61–90 days overdue", amount_minor: 0 },
+      { bucket: "Over 90 days overdue", amount_minor: 0 },
+    ],
+    owed: { total_minor: 252000, count: 3, overdue_minor: 128000, over_30_share: 0.341, other_currencies: 0 },
+    checks: [
+      {
+        id: "overdue-invoices", severity: "attention", sentence: "34% of what customers owe is over 30 days overdue.",
+        why: "We flag this when more than 20% of unpaid invoices (by amount) are over 30 days late.",
+      },
+      { id: "short-runway", severity: "urgent", sentence: "At the current rate, cash lasts about 2.4 months.", why: "More has gone out than come in over the last three months." },
+    ],
     ...over,
   };
 }

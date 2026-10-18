@@ -9,14 +9,14 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | Stage | What | Status |
 |---|---|---|
 | 0 | Foundation and document pipeline | Done |
-| 1 | Frontend: see stages F1–F6 below | F1–F3 and F5 done; F4 and F6 drafted |
+| 1 | Frontend: see stages F1–F6 below | F1–F5 done; F6 drafted |
 | 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Done |
 | 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Done |
 | 7 | Approvals, recommendations, financing and assistant | Done |
-| 8 | Frontend: see stages F3–F6 below | F3 and F5 done; F4 and F6 drafted |
+| 8 | Frontend: see stages F3–F6 below | F3–F5 done; F6 drafted |
 | 9 | Hardening and submission material | Not started |
 
 ## Stage 0: Foundation and document pipeline (done)
@@ -197,7 +197,7 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 | F1 | Setup, design tokens, app shell, sign-in and two-step | 0 | Done |
 | F2 | Shared components and test setup | 0 | Done |
 | F3 | Inbox, documents review, activity, connections | 0, 2–5 | Done |
-| F4 | Home, cash flow, business health | 6 | Drafted |
+| F4 | Home, cash flow, business health | 6 | Done |
 | F5 | Recommendations, financing, Ask (chat) | 7 | Done |
 | F6 | Interaction features and end-to-end journeys | All | Drafted (search, shortcuts dialog) |
 
@@ -232,11 +232,16 @@ Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs a
 - Not done: the in-app photo with jscanify (phones use the camera through the file picker for now); Plaid Link (there are no Link start and exchange endpoints yet).
 - Tests: 41 new Vitest tests (inbox, documents and review, activity, connections, my receipts), shared fixtures copied from the API's shapes; 76 frontend tests pass. Checked in the browser against the running API at desktop and phone widths, light and dark. Bugs found in that check: the `/connect` proxy rule caught the `/connections` page, QuickBooks result messages were lost on a fresh page load, and long account names pushed the phone layout off screen.
 
-### F4: Home, cash flow, business health
+### F4: Home, cash flow, business health (done)
 
-- Home: greeting, Today briefing, cash today with a small forecast, three cards, quick buttons.
-- Cash flow: lowest point headline, forecast with best and worst band and bill markers, warnings, drag a bill, add a planned cost.
-- Business health: four headline numbers, one switchable chart, health checks.
+- Types and hooks now match the Stage 6 routes (`home`, `cash`, `cash-flow`, `cash-flow/what-if`, `cash-flow/why`, `planned-items`, `business-health`). Dates the server sends as calendar days are read as that day wherever the person is.
+- Home: greeting and quick buttons (upload, Ask, plan a cost). The Today briefing puts the most pressing items first, each with its next step; more than four fold behind "Show more". Cash today says how many accounts it covers and which ones in another currency it leaves out, with the next 30 days, the balance in 30 days and the lowest point in 90. Three cards: bills due this week (or when the next one is due), who owes you with what's overdue (opens that chart on Business health), and recommendations with the most urgent one named and opened directly. Nothing connected yet shows how to start.
+- Cash flow: the lowest point and whether it stays above the safety level, then the balance in 7, 30, 60 and 90 days. The forecast has the best-to-worst band, markers for money going out (named in the tooltip) and the safety level, which stays in view even when cash is below it every day. Unpaid bills sit on a strip lined up with the chart's days: drag one to another day, or use the arrow keys, and we ask for the what-if once the person stops. Any payment can be switched off. The what-if bar shows the new lowest point next to the old one, the chart shows the forecast before the changes as a dashed line, and Reset or "Put back" undo it; nothing is saved. Plan a cost (once, weekly or monthly) is tried out first; people who can use financing can keep it in everyone's forecast and remove it later. Warnings say why, and the expected-case ones link to financing. "Why cash changed" (this month or the last 30 days) shows the AI's explanation with "What the AI saw" when the AI wrote it, our own sentence otherwise, and the reasons with their amounts.
+- Business health: profit and margin for the last three full months, days to get paid and runway, each saying when there is nothing to measure yet instead of showing 0. One chart switches between profit by month, spending by category, biggest suppliers and who owes you (`?view=` keeps the choice); every view has a table, and long names get bars across. Health checks with why each one shows.
+- Live updates: a sync, a match or an approval now refreshes Home, cash flow, business health and financing too.
+- Tests: 33 new Vitest tests (cash flow 11, Home 8, business health 8, dates 3, live updates 2, chart 1) with fixtures copied from the API's shapes; 131 frontend tests pass, with typecheck and build.
+- Bugs found and fixed, each with a regression test: calendar days showed as the day before west of London; after a sync, a match or an approval the money screens kept the old numbers until a reload; a missing "days to get paid" showed as "0 days" and no sales as a 0% margin; the Home chart was called "Next 90 days" over the 31 days the server sends; the safety level dropped out of the chart when cash stayed below it every day.
+- Not checked in the browser yet; that happens with the merge.
 
 ### F5: Recommendations, financing, Ask (done)
 

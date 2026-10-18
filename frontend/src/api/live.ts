@@ -2,11 +2,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 /** What each kind of server event can change on screen. Events carry IDs and stages only, never document text. */
+const MONEY = ["home", "cash", "cash-flow", "business-health", "financing"];
+
 const AFFECTS: Record<string, string[]> = {
   document: ["documents", "inbox", "activity"],
-  action: ["inbox", "documents", "activity", "home", "recommendations"],
-  connection: ["connections", "activity"],
-  matches: ["inbox", "activity", "home"],
+  // An approved bill or payment changes the forecast and health numbers as well
+  action: ["inbox", "documents", "activity", "recommendations", ...MONEY],
+  // A sync reads new balances, bank lines, invoices and bills
+  connection: ["connections", "activity", ...MONEY],
+  matches: ["inbox", "activity", ...MONEY],
   recommendations: ["recommendations", "home"],
   forecast: ["cash-flow", "financing", "home"],
   email_sent: ["activity"],
