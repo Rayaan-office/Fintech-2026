@@ -16,6 +16,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Done |
 | 7 | Approvals, recommendations, financing and assistant | Done |
+| 7b | Learning from decisions, getting paid, ask anything | Done (live check to do) |
 | 8 | Frontend: see stages F3–F6 below | F3–F5 done; F6 drafted |
 | 9 | Hardening and submission material | Not started |
 
@@ -185,6 +186,29 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
   - CloudDesk's small creep fell under a £30 floor;
   - getting slower was diluted by older invoices.
 - Found in the live check: the AI ran out of room before answering (token allowance raised), and "Acme" in a question wasn't hidden (a short name now becomes its placeholder, or both placeholders when two suppliers share it).
+
+## Stage 7b: Learning from decisions, getting paid, ask anything (done, live check to do)
+
+- Learning from decisions (`copilot/learning.py`, `api/learning.py`):
+  - corrections are kept beside the AI's original answer and the supplier; after 2 matching corrections on approved documents we fill the value in next time (category, type, currency, payment terms, supplier name), marked "Filled from your past corrections" with Undo;
+  - recommendations are ordered by Thompson sampling on how often each kind is acted on or turned down, only within the same severity; urgent items and changed bank details never move down; a kind rarely acted on is folded under "Less useful to you", never hidden;
+  - bank details, contacts and amounts are never learned; a business owner can reset any of it; the "What we've learned" page shows it all with its numbers.
+- Getting paid faster and for less (`analytics/getting_paid.py`, `analytics/methods.py`, `copilot/reminders.py`, `connectors/payment_links.py`, `api/payments.py`):
+  - how each payment was made (card, bank transfer, international transfer, cash) from the payment platform and the bank feed;
+  - payments that arrive short are recorded; the leftover is never chased and can be recorded as a bank charge after approval;
+  - per customer: what each way of paying lost or cost and how long it took, and the saving from paying by card;
+  - reminders in three steps (friendly, firm, final notice); a final notice needs a business owner; a card payment link is made only after approval, with a sandbox key that can only create payment links.
+- Ask anything (`copilot/tools.py`, `copilot/passages.py`):
+  - a query tool: totals, counts or averages by month, category or customer and supplier, built by our code from fixed choices, never SQL from the AI;
+  - document search (Postgres full-text) returning short passages with personal and bank details removed and names as placeholders.
+- Tests: 131 new, 480 backend and 156 frontend tests pass.
+- Bugs fixed:
+  - a corrected supplier or total on a bill waiting for approval was ignored;
+  - a second correction lost the AI's original answer;
+  - a payment that arrived short left a leftover that reminders chased, that counted as owed, and that kept the invoice out of payment habits;
+  - international transfers that lost a typical bank charge were never matched;
+  - a customer could be chased from two cards at once;
+  - in the assistant: placeholder numbers clashed across turns, a fallback answer kept personal details in the history, and a document's hidden person could be shown with a name from the question.
 
 ## Stage 9: Hardening and submission
 
