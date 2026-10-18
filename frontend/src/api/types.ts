@@ -93,13 +93,43 @@ export type AiWording = {
 
 export type ForecastPoint = { date: string; expected_minor: number; best_minor: number; worst_minor: number };
 
-// Home
+/** Days ahead ("7", "30", "60", "90") to the expected balance on that day. */
+export type Horizons = Record<"7" | "30" | "60" | "90", number>;
+
+export type LowPoint = { balance_minor: number; date: string };
+
+// Cash (GET /api/cash)
+
+export type CashAccount = {
+  id: string;
+  name: string;
+  source: string;
+  mask: string | null;
+  currency: string;
+  balance_minor: number;
+  /** False for accounts in another currency: we hold no exchange rates, so they are left out of the total. */
+  counted: boolean;
+};
+
+export type CashPosition = {
+  currency: string;
+  balance_minor: number;
+  as_of: string;
+  accounts: CashAccount[];
+  /** The part of the total held by payment platforms rather than banks. */
+  platform_minor: number;
+  left_out: CashAccount[];
+};
+
+// Home (GET /api/home)
 
 export type TodayItem = { id: string; sentence: string; action_label: string; href: string; level: ApprovalLevel; severity: Severity };
 
 export type HomeSummary = {
   today: TodayItem[];
-  cash: { balance_minor: number; as_of: string; forecast: ForecastPoint[] };
+  /** `forecast` is the first 31 days of the forecast; `lowest` and `horizons` cover all 90. */
+  cash: { balance_minor: number; as_of: string; forecast: ForecastPoint[]; lowest: LowPoint; horizons: Horizons };
+  /** Bills due in the next 7 days (overdue ones included); `next_due_date` is the earliest of all unpaid bills. */
   bills_due: { count: number; total_minor: number; next_due_date: string | null };
   who_owes_you: { count: number; total_minor: number; overdue_minor: number };
   recommendations: { count: number; at_stake_minor: number };
@@ -125,33 +155,141 @@ export type InboxItem = InboxDocument | (Action & { kind?: undefined });
 
 export type Inbox = { items: InboxItem[]; counts: { to_review: number; needs_approval: number } };
 
-// Cash flow
+// Cash flow (GET /api/cash-flow, POST /api/cash-flow/what-if)
 
+/**
+ * Money going out in the forecast: unpaid bills (`bill:<id>`, the only ones that can be moved),
+ * repeating payments, VAT and planned costs. `amount_minor` is positive.
+ */
 export type ForecastBill = { id: string; date: string; label: string; amount_minor: number; movable: boolean };
-export type CashWarning = { id: string; severity: Severity; sentence: string; why: string };
 
-export type CashFlow = {
-  lowest: { balance_minor: number; date: string };
-  safety_level_minor: number;
-  balance_minor: number;
-  series: ForecastPoint[];
-  bills: ForecastBill[];
-  warnings: CashWarning[];
+export type ForecastItem = {
+  id: string;
+  label: string;
+  kind: "invoice" | "bill" | "repeating" | "tax" | "planned";
+  /** Positive for money in, negative for money out. */
+  amount_minor: number;
+  /** null: left out of that case (an invoice long overdue counts only in the best case). */
+  expected: string | null;
+  best: string | null;
+  worst: string | null;
+  why: string;
+  record_ids: string[];
 };
 
-// Business health
+export type CashWarning = {
+  id: string;
+  /** watch: worst case only; warning: expected case; urgent: within 7 days. */
+  grade: "watch" | "warning" | "urgent";
+  severity: Severity;
+  sentence: string;
+  why: string;
+  date: string;
+  days: number;
+  balance_minor: number;
+  item_ids: string[];
+};
+
+export type CashFlow = {
+  today: string;
+  currency: string;
+  balance_minor: number;
+  safety_level_minor: number;
+  safety_level_why: string;
+  lowest: LowPoint;
+  worst_lowest: LowPoint;
+  horizons: Horizons;
+  series: ForecastPoint[];
+  bills: ForecastBill[];
+  items: ForecastItem[];
+  repeating: { label: string; every: string; amount_minor: number; last: string; times: number }[];
+  everyday_minor_per_week: number;
+  warnings: CashWarning[];
+  /** Items in other currencies that the forecast can't include. */
+  left_out: { label: string; count: number }[];
+};
+
+export type PlanRepeat = "none" | "weekly" | "monthly";
+
+/** A planned cost (or money in) for the what-if, or kept in the forecast. */
+export type PlannedCost = { label: string; amount_minor: number; date: string; repeat?: PlanRepeat; direction?: "in" | "out" };
+export type SavedPlan = Required<PlannedCost> & { id: string };
+
+export type WhatIfInput = { planned: PlannedCost[]; excluded_bill_ids: string[]; moved_bills: { id: string; date: string }[] };
+
+export type WhatIfResult = CashFlow & {
+  what_if: {
+    lowest_before: LowPoint;
+    lowest_after: LowPoint;
+    worst_lowest_after: LowPoint;
+    below_safety: boolean;
+    worst_below_safety: boolean;
+    shortfall_minor: number;
+    worst_shortfall_minor: number;
+  };
+};
+
+// Why cash changed (GET /api/cash-flow/why)
+
+export type WhyPeriod = "month" | "30d";
+
+export type WhyReason = {
+  group: string;
+  label: string;
+  /** This period's net minus last period's: positive means more cash. */
+  change_minor: number;
+  this_period_minor: number;
+  last_period_minor: number;
+  items: { label: string; change_minor: number }[];
+  /** Customer payments only: invoices that fell due in each period and were still unpaid at its end. */
+  late_this_period_minor?: number;
+  late_last_period_minor?: number;
+};
+
+export type WhyCashChanged = {
+  period: WhyPeriod;
+  this_period: { from: string; to: string; net_minor: number };
+  last_period: { from: string; to: string; net_minor: number };
+  change_minor: number;
+  reasons: WhyReason[];
+  /** Our own sentence from the numbers. */
+  sentence: string;
+  explanation: AiWording;
+};
+
+// Business health (GET /api/business-health)
 
 export type HealthCheck = { id: string; severity: Severity; sentence: string; why: string };
 
-export type BusinessHealth = {
-  period_label: string;
+export type MonthResult = {
+  month: string;
+  /** "Apr 2026", "Apr 2026 (part)" when our records start part-way through, "Oct 2026 (so far)". */
+  label: string;
+  sales_minor: number;
+  costs_minor: number;
   profit_minor: number;
+  margin_pct: number | null;
+  complete: boolean;
+};
+
+export type BusinessHealth = {
+  /** The last three full months, e.g. "Jul 2026 to Sep 2026"; empty when there is no full month yet. */
+  period_label: string;
+  sales_minor: number;
+  profit_minor: number;
+  /** 0 when there were no sales in the period. */
   margin_pct: number;
-  days_to_get_paid: number;
+  /** null when no invoice was paid in the last 90 days. */
+  days_to_get_paid: number | null;
+  /** null when more comes in than goes out. */
   runway_months: number | null;
-  profit_and_loss: { month: string; sales_minor: number; costs_minor: number; profit_minor: number }[];
+  /** Average net cash flow a month over the last three months. */
+  monthly_net_minor: number;
+  profit_and_loss: MonthResult[];
   spending: { category: string; amount_minor: number }[];
+  top_suppliers: { name: string; amount_minor: number }[];
   who_owes_you: { bucket: string; amount_minor: number }[];
+  owed: { total_minor: number; count: number; overdue_minor: number; over_30_share: number; other_currencies: number };
   checks: HealthCheck[];
 };
 

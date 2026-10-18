@@ -34,14 +34,24 @@ type CashChartProps = {
   safetyLevelMinor?: number;
   lowest?: { date: string; balance_minor: number };
   markers?: Marker[];
+  /** The forecast before a what-if, drawn as a dashed line to compare with. */
+  before?: { date: string; expected_minor: number }[];
+  /** A marker to draw larger, such as the bill being moved. */
+  highlight?: string | null;
 };
 
+/** The full-size cash chart's plot area starts this far in (margin plus the money axis), so a strip below can line up with its days. */
+export const CASH_CHART_INSET = { left: 4 + 56, right: 12 };
+
 /** Cash over time: expected line with a best-to-worst band, bills as markers. */
-export function CashAreaChart({ series, currency = "GBP", height = 260, compact = false, safetyLevelMinor, lowest, markers = [] }: CashChartProps) {
+export function CashAreaChart({ series, currency = "GBP", height = 260, compact = false, safetyLevelMinor, lowest, markers = [], before, highlight }: CashChartProps) {
   const { hidden } = usePrivacy();
   const animate = !useReducedMotion();
-  const data = series.map((p) => ({ ...p, band: [p.worst_minor, p.best_minor] as [number, number] }));
+  const earlier = new Map((before ?? []).map((p) => [p.date, p.expected_minor]));
+  const data = series.map((p) => ({ ...p, band: [p.worst_minor, p.best_minor] as [number, number], before_minor: earlier.get(p.date) }));
   const byDate = new Map(series.map((p) => [p.date, p.expected_minor]));
+  const billsOn = new Map<string, Marker[]>();
+  for (const m of markers) billsOn.set(m.date, [...(billsOn.get(m.date) ?? []), m]);
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -74,22 +84,36 @@ export function CashAreaChart({ series, currency = "GBP", height = 260, compact 
           <Tooltip
             cursor={{ stroke: "var(--border)" }}
             content={({ active, payload, label }) => {
-              const point = payload?.[0]?.payload as (ForecastPoint & { band: [number, number] }) | undefined;
+              const point = payload?.[0]?.payload as (typeof data)[number] | undefined;
               if (!active || !point) return null;
+              const bills = billsOn.get(point.date) ?? [];
               return (
                 <ChartTooltip title={formatDate(String(label), true)}>
                   <Row label="Expected">
                     <Money minor={point.expected_minor} currency={currency} />
                   </Row>
+                  {point.before_minor !== undefined && point.before_minor !== point.expected_minor && (
+                    <Row label="Before your changes">
+                      <Money minor={point.before_minor} currency={currency} />
+                    </Row>
+                  )}
                   <Row label="Best to worst">
                     <Money minor={point.best_minor} currency={currency} /> – <Money minor={point.worst_minor} currency={currency} />
                   </Row>
+                  {bills.map((b) => (
+                    <Row key={b.id} label={b.label}>
+                      <Money minor={b.amount_minor} currency={currency} direction="out" />
+                    </Row>
+                  ))}
                 </ChartTooltip>
               );
             }}
           />
         )}
         <Area dataKey="band" stroke="none" fill="var(--chart-band)" isAnimationActive={false} activeDot={false} />
+        {before && (
+          <Area dataKey="before_minor" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="3 3" fill="none" dot={false} activeDot={false} isAnimationActive={false} />
+        )}
         <Area
           dataKey="expected_minor"
           stroke="var(--primary)"
@@ -100,11 +124,29 @@ export function CashAreaChart({ series, currency = "GBP", height = 260, compact 
           animationDuration={300}
         />
         {safetyLevelMinor !== undefined && !compact && (
-          <ReferenceLine y={safetyLevelMinor} stroke="var(--warning)" strokeDasharray="4 4" label={{ value: "Safety level", position: "insideTopLeft", ...axis }} />
+          // Kept in view even when cash stays below it the whole time
+          <ReferenceLine
+            y={safetyLevelMinor}
+            ifOverflow="extendDomain"
+            stroke="var(--warning)"
+            strokeDasharray="4 4"
+            label={{ value: "Safety level", position: "insideTopLeft", ...axis }}
+          />
         )}
         {markers.map((m) => {
           const y = byDate.get(m.date);
-          return y === undefined ? null : <ReferenceDot key={m.id} x={m.date} y={y} r={4} fill="var(--card)" stroke="var(--muted-foreground)" strokeWidth={1.5} />;
+          const on = m.id === highlight;
+          return y === undefined ? null : (
+            <ReferenceDot
+              key={m.id}
+              x={m.date}
+              y={y}
+              r={on ? 6 : 4}
+              fill={on ? "var(--primary)" : "var(--card)"}
+              stroke={on ? "var(--card)" : "var(--muted-foreground)"}
+              strokeWidth={1.5}
+            />
+          );
         })}
         {lowest && (
           <ReferenceDot x={lowest.date} y={lowest.balance_minor} r={5} fill="var(--primary)" stroke="var(--card)" strokeWidth={2} />
@@ -121,33 +163,63 @@ export function CategoryBarChart({
   valueKey,
   currency = "GBP",
   height = 260,
+  horizontal = false,
 }: {
   data: object[];
   categoryKey: string;
   valueKey: string;
   currency?: string;
   height?: number;
+  /** Bars across with the names down the side, for long names (categories, suppliers) that would overlap below. */
+  horizontal?: boolean;
 }) {
   const { hidden } = usePrivacy();
   const animate = !useReducedMotion();
+  const money = (v: number) => (hidden ? "••••" : formatMoneyCompact(v, currency));
+  const tooltip = (
+    <Tooltip
+      cursor={{ fill: "var(--accent)" }}
+      content={({ active, payload, label }) => {
+        const value = payload?.[0]?.value;
+        if (!active || typeof value !== "number") return null;
+        return (
+          <ChartTooltip title={String(label)}>
+            <Money minor={value} currency={currency} />
+          </ChartTooltip>
+        );
+      }}
+    />
+  );
+  if (horizontal) {
+    return (
+      <ResponsiveContainer width="100%" height={Math.max(120, data.length * 36 + 24)}>
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 4 }}>
+          <CartesianGrid horizontal={false} stroke="var(--chart-grid)" />
+          <XAxis type="number" tick={axis} tickLine={false} axisLine={false} tickFormatter={money} />
+          <YAxis
+            type="category"
+            dataKey={categoryKey}
+            tick={axis}
+            tickLine={false}
+            axisLine={false}
+            width={112}
+            interval={0}
+            tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
+          />
+          {tooltip}
+          <Bar dataKey={valueKey} fill="var(--primary)" radius={[0, 4, 4, 0]} maxBarSize={22} isAnimationActive={animate} animationDuration={300} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
         <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
         <XAxis dataKey={categoryKey} tick={axis} tickLine={false} axisLine={false} interval={0} />
-        <YAxis tick={axis} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => (hidden ? "••••" : formatMoneyCompact(v, currency))} />
-        <Tooltip
-          cursor={{ fill: "var(--accent)" }}
-          content={({ active, payload, label }) => {
-            const value = payload?.[0]?.value;
-            if (!active || typeof value !== "number") return null;
-            return (
-              <ChartTooltip title={String(label)}>
-                <Money minor={value} currency={currency} />
-              </ChartTooltip>
-            );
-          }}
-        />
+        <YAxis tick={axis} tickLine={false} axisLine={false} width={56} tickFormatter={money} />
+        <ReferenceLine y={0} stroke="var(--border)" />
+        {tooltip}
         <Bar dataKey={valueKey} fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={animate} animationDuration={300} />
       </BarChart>
     </ResponsiveContainer>

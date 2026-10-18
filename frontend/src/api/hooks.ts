@@ -10,6 +10,7 @@ import type {
   BusinessProfile,
   BusinessHealth,
   CashFlow,
+  CashPosition,
   ConnectionProvider,
   Connections,
   DocumentDetail,
@@ -20,13 +21,19 @@ import type {
   Inbox,
   InboxTab,
   Notification,
+  PlannedCost,
   ProfileUpdate,
   QuoteResult,
   Recommendation,
   RecommendationsRun,
+  SavedPlan,
   SearchResult,
   SyncResult,
   TeamMember,
+  WhatIfInput,
+  WhatIfResult,
+  WhyCashChanged,
+  WhyPeriod,
 } from "./types";
 
 /*
@@ -45,7 +52,17 @@ function useScreen<T>(key: readonly unknown[], path: string, enabled = true) {
 export const useHome = () => useScreen<HomeSummary>(["home"], "/api/home");
 /** Each tab is its own request; every answer also carries the counts for the tab badges. */
 export const useInbox = (tab: InboxTab, enabled = true) => useScreen<Inbox>(["inbox", tab], `/api/inbox?tab=${tab}&limit=100`, enabled);
+export const useCash = () => useScreen<CashPosition>(["cash"], "/api/cash");
 export const useCashFlow = () => useScreen<CashFlow>(["cash-flow"], "/api/cash-flow");
+/** The numbers behind the change and a short explanation the AI writes from them only. Kept under "cash-flow" so it refreshes with the forecast. */
+export function useWhyCashChanged(period: WhyPeriod) {
+  return useQuery({
+    queryKey: ["cash-flow", "why", period],
+    queryFn: ({ signal }) => apiOptional<WhyCashChanged>(`/api/cash-flow/why?period=${period}`, { signal }),
+    placeholderData: keepPreviousData,
+  });
+}
+export const usePlannedItems = () => useScreen<{ items: SavedPlan[] }>(["cash-flow", "planned"], "/api/planned-items");
 export const useBusinessHealth = () => useScreen<BusinessHealth>(["business-health"], "/api/business-health");
 export const useRecommendations = () => useScreen<{ items: Recommendation[] }>(["recommendations"], "/api/recommendations");
 
@@ -97,13 +114,11 @@ export function useActivity(filter: { actor?: string; event?: string }) {
   });
 }
 
-export type WhatIf = { planned: { label: string; amount_minor: number; date: string }[]; excluded_bill_ids: string[] };
-
-/** The forecast re-run with planned costs added and chosen bills left out. */
-export function useWhatIf(scenario: WhatIf | null) {
+/** The forecast re-run with planned costs added and bills left out or moved. Nothing is saved; real records never change. */
+export function useWhatIf(scenario: WhatIfInput | null) {
   return useQuery({
     queryKey: ["cash-flow", "what-if", scenario],
-    queryFn: ({ signal }) => apiOptional<CashFlow>("/api/cash-flow/what-if", { method: "POST", body: scenario, signal }),
+    queryFn: ({ signal }) => api<WhatIfResult>("/api/cash-flow/what-if", { method: "POST", body: scenario, signal }),
     enabled: scenario !== null,
     placeholderData: keepPreviousData,
   });
@@ -143,7 +158,8 @@ function useActionMutation(verb: "approve" | "reject" | "cancel" | "undo") {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (actionId: string) => api<Action>(actionPath(actionId, verb), { method: "POST" }),
-    onSettled: () => invalidate("inbox", "home", "activity", "recommendations", "documents"),
+    // An approved bill, payment or match changes the forecast and the health numbers too
+    onSettled: () => invalidate("inbox", "home", "activity", "recommendations", "documents", "cash", "cash-flow", "business-health"),
   });
 }
 
@@ -261,6 +277,23 @@ export function useReprocessDocument(documentId: string) {
   });
 }
 
+/** Keeps a planned cost in the forecast for everyone until someone removes it. Real records are not changed. */
+export function useAddPlan() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (plan: PlannedCost) => api<SavedPlan>("/api/planned-items", { method: "POST", body: plan }),
+    onSuccess: () => invalidate("cash-flow", "home", "financing", "activity"),
+  });
+}
+
+export function useRemovePlan() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: true }>(`/api/planned-items/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: () => invalidate("cash-flow", "home", "financing", "activity"),
+  });
+}
+
 export function useCreateHandoff() {
   return useMutation({ mutationFn: () => api<Handoff>("/api/handoff", { method: "POST" }) });
 }
@@ -282,7 +315,7 @@ export function useSync() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (provider: ConnectionProvider) => api<SyncResult>(connectionPath(provider, "sync"), { method: "POST" }),
-    onSettled: () => invalidate("connections", "activity", "documents", "inbox"),
+    onSettled: () => invalidate("connections", "activity", "documents", "inbox", "home", "cash", "cash-flow", "business-health"),
   });
 }
 
