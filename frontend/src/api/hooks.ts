@@ -28,6 +28,7 @@ import type {
   SyncResult,
   TeamMember,
 } from "./types";
+import type { LearningReset, LearningSummary } from "./types";
 
 /*
  * One hook per screen. Each resolves to `null` when the server has nothing for that screen
@@ -307,5 +308,27 @@ export function useSetAiPaused() {
   return useMutation({
     mutationFn: (paused: boolean) => api<{ ai_paused: boolean }>("/api/settings/ai-pause", { method: "POST", body: { paused } }),
     onSuccess: () => invalidate("me"),
+  });
+}
+
+// Learning from decisions
+
+export const useLearning = () => useScreen<LearningSummary>(["learning"], "/api/learning");
+
+/** Owners only. Corrections stay in the history; we just stop learning from them. */
+export function useResetLearning() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (what: LearningReset) => api<LearningSummary>("/api/learning/reset", { method: "POST", body: what }),
+    onSuccess: () => invalidate("learning", "recommendations", "activity"),
+  });
+}
+
+/** Opening the page a recommendation points to counts as acting on it. */
+export function useFollowRecommendation() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: true }>(recPath(id, "followed"), { method: "POST" }),
+    onSuccess: () => invalidate("learning"),
   });
 }

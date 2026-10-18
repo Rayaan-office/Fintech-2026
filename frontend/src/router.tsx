@@ -44,6 +44,7 @@ export const routes: RouteObject[] = [
               page("documents", "view_all", () => import("./pages/DocumentsPage")),
               page("activity", "view_activity", () => import("./pages/ActivityPage")),
               page("connections", "view_all", () => import("./pages/ConnectionsPage")),
+              page("learning", "view_all", () => import("./pages/LearningPage")),
               page("settings", null, () => import("./pages/SettingsPage")),
               page("my-receipts", "submit_receipt", () => import("./pages/MyReceiptsPage")),
               { path: "*", Component: NotFoundPage },

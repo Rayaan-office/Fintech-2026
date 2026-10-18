@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import actions, archive, events
 from ..analytics import financing, lender_pack, rules
 from ..connectors import email_out
-from ..copilot import insights, wording
+from ..copilot import insights, learning, wording
 from ..models import Action, Counterparty, Mute, Recommendation
 from ..security import audit
 from ..security.http import limiter
@@ -67,7 +67,10 @@ def recommendations(status: str = "new", p: Principal = Depends(require(Perm.VIE
             raise HTTPException(422, "Unknown status.")
         q = q.where(Recommendation.status == status)
     names = {c.id: c.display_name for c in db.execute(select(Counterparty)).scalars()}
-    return {"items": [rec_out(db, r, names) for r in db.execute(q.limit(100)).scalars()]}
+    # What was learned from past decisions reorders within each severity; urgent items never move
+    rows = learning.order(db, p.business_id, db.execute(q.limit(100)).scalars().all())
+    fold = learning.folded(db, rows)
+    return {"items": [{**rec_out(db, r, names), "less_useful": r.id in fold} for r in rows]}
 
 
 @router.post("/recommendations/refresh")
@@ -89,6 +92,7 @@ def dismiss(rec_id: UUID, body: DismissIn | None = None, p: Principal = Depends(
     r = db.get(Recommendation, rec_id)
     if not r:
         raise HTTPException(404, "Not found.")
+    learning.reward(db, r, won=False, actor=p.actor)
     r.status = "dismissed"
     muted = bool((body or DismissIn()).mute) and r.kind != "bank_details_changed"
     if muted and not db.execute(select(Mute).where(Mute.kind == r.kind, Mute.counterparty_id == r.counterparty_id)).first():
@@ -108,6 +112,7 @@ def next_step(rec_id: UUID, p: Principal = Depends(require(Perm.SEND_REMINDER)),
     step = r.next_step or {}
     if r.status != "new" or step.get("action") not in ("email_supplier", "send_payment_reminder"):
         raise HTTPException(409, "There is no email to draft for this recommendation.")
+    learning.reward(db, r, won=True, actor=p.actor)
     if step.get("action_id"):
         a = db.get(Action, UUID(step["action_id"]))
         if a and a.status == "pending":

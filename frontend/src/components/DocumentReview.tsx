@@ -22,6 +22,7 @@ import {
   ScanTextIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
+  SparklesIcon,
   TagIcon,
   TriangleAlertIcon,
   type LucideIcon,
@@ -31,7 +32,7 @@ import { toast } from "sonner";
 import { useCan } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useCorrectFields, useDocument, useReprocessDocument } from "@/api/hooks";
-import type { DocumentDetail, DocumentStatus, Highlight, TimelineStep } from "@/api/types";
+import type { DocumentDetail, DocumentStatus, DocumentWithLearning, Highlight, LearnedField, TimelineStep } from "@/api/types";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ActionConfirmation } from "./ActionConfirmation";
@@ -328,6 +329,16 @@ function Fields({ doc: d, active, onActive, children }: { doc: DocumentDetail; a
     });
   };
 
+  // Puts back what the AI read; the server then stops learning that value
+  const undoLearned = (key: string, aiValue: string) =>
+    correct.mutate(
+      { [key]: aiValue },
+      {
+        onSuccess: () => toast.success("Put back what the AI read. We won't fill this in again until you correct it the same way twice more."),
+        onError: (err) => toast.error(errorMessage(err)),
+      },
+    );
+
   if (isReading(d.status) && !hasFields) {
     return (
       <p className="flex flex-col items-center gap-2 rounded-xl border px-4 py-10 text-center text-sm text-muted-foreground">
@@ -437,6 +448,7 @@ function Fields({ doc: d, active, onActive, children }: { doc: DocumentDetail; a
                 )}
               </dd>
               {found.has(f.key) && <span className="sr-only">Highlighted on the original</span>}
+              <LearnedChip learned={(d as DocumentWithLearning).learned?.[f.key]} label={f.label} canUndo={mayEdit} undoing={correct.isPending} onUndo={(ai) => undoLearned(f.key, ai)} />
             </div>
           );
         })}
@@ -557,6 +569,24 @@ export function ReadingStatus({ stage }: { stage: string }) {
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm" aria-live="polite">
       <StatusDot status="accent" label="Reading:" pulse />
       {SHORT[stage] ?? "Reading"}
+    </span>
+  );
+}
+
+/** A value we filled in from the person's past corrections, with Undo while the document can still change. */
+function LearnedChip({ learned, label, canUndo, undoing, onUndo }: { learned: LearnedField | undefined; label: string; canUndo: boolean; undoing: boolean; onUndo: (aiValue: string) => void }) {
+  if (!learned || learned.undone) return null;
+  const read = learned.ai_value ? `The AI read “${learned.ai_value}”.` : "The AI didn't find one.";
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      <Badge variant="accent" title={`You corrected this on ${learned.corrections} approved documents from this supplier. ${read}`}>
+        <SparklesIcon aria-hidden /> Filled from your past corrections
+      </Badge>
+      {canUndo && (
+        <Button variant="ghost" size="sm" className="h-7 px-2" disabled={undoing} onClick={() => onUndo(learned.ai_value)} aria-label={`Undo “${label}”: put back what the AI read`}>
+          Undo
+        </Button>
+      )}
     </span>
   );
 }

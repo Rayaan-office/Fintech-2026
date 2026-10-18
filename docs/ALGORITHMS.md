@@ -222,3 +222,52 @@ How it stays safe and correct:
 - **Charts and tables from our code.** The chart or table under an answer and its sources come from the tool results, never from the AI.
 - **Actions only on a click.** The AI may suggest a payment reminder or a supplier email. It becomes a draft only when the person clicks it, and then waits for approval.
 - **Private history.** Each conversation belongs to one person; the AI sees only that conversation's earlier turns, as placeholders.
+
+## 13. Learning from decisions
+
+The copilot learns from two things people already do: correcting what was read from a document, and acting on or turning down a recommendation. What it learns stays in our database. Nothing extra is sent to the AI, and learning never approves anything by itself.
+
+### Remembering corrections
+
+We keep every correction beside the AI's original answer, even when a field is corrected more than once, together with the supplier or customer it belongs to.
+
+| What we learn, per supplier or customer | Learned from |
+|---|---|
+| What it's for (category) | Corrections to the category |
+| Type (bill, receipt, credit note and so on) | Corrections to the type |
+| Currency | Corrections to the currency |
+| Payment terms (days from issue to due date) | Corrections to the issue or due date |
+| Supplier name (what the AI reads, mapped to the real supplier) | Corrections to the name |
+
+- **When a value counts as learned.** After the same correction on 2 approved documents from one supplier, with none since that disagree. A later correction to something else, or a later approved document that ended up different, stops it. Corrections on documents still waiting or turned down don't count.
+- **Using it.** When a new document is read, we fill in the learned values before the supplier is looked up. Each one shows "Filled from your past corrections" beside the field, with Undo, which puts back what the AI read and counts as a disagreement.
+- **Still checked.** The usual checks and approvals still apply. Only a learned category may be recorded automatically; a learned type, currency, due date or name always waits for a person.
+- **Never learned.** Bank details, contact details and amounts. These can't be corrected through the review screen, and bank details are never used to decide anything automatically.
+
+### Ranking recommendations that learns
+
+Each kind of recommendation keeps a count of how often it was acted on (the next step was clicked, or its drafted email approved) and turned down (dismissed, or its email rejected). A later decision on the same recommendation replaces the earlier one, so nothing counts twice.
+
+We order recommendations with Thompson sampling, a standard way to balance showing what has worked with still trying the rest:
+
+1. For each kind, we draw a number from a Beta(1 + acted on, 1 + turned down) distribution. A kind usually acted on draws close to 1, one usually dismissed close to 0, and one with few decisions anywhere in between, so it still gets a chance. A kind with no decisions yet uses 0.5, so the order stays by money until people start deciding.
+2. Each recommendation's score is that draw times the money at stake.
+3. We reorder only within the same severity. A minor item never jumps above a more serious one.
+4. The draw is seeded by the business, the day and the kind, so the order stays the same all day and differs between businesses.
+
+Safety limits:
+- **Urgent items and changed bank details are never moved down.** They come first in their group in their usual order, whatever was learned, and are never folded.
+- **Folded, never hidden.** A kind acted on less than 20% of the time after 5 or more decisions, at severity "watch" or below, is shown folded under "Less useful to you".
+
+### Seeing and resetting it
+
+The "What we've learned" page explains in plain words what was learned for each supplier and each kind of recommendation, with the counts behind it. A business owner can reset one learned value, everything for one supplier, one kind's ranking, or everything. Corrections are kept as history but no longer learned from, and every reset is written to the activity log.
+
+### What it measures
+
+| Number | Meaning |
+|---|---|
+| Values filled in | Fields we filled in from past corrections, and how many a person undid |
+| Time saved | Values filled in and kept on approved documents, times 30 seconds each. We assume that is how long finding a value on the document and typing it in takes. |
+| Top recommendation acted on | How often the recommendation first in the list was acted on rather than turned down |
+| Recommendations acted on | The same for every recommendation |
