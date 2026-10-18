@@ -378,3 +378,9 @@ export function useRecordBankCharge() {
     onSuccess: () => invalidate("recommendations", "inbox", "getting-paid"),
   });
 }
+
+// Ask anything
+
+import type { AskStats } from "./types";
+
+export const useAskStats = () => useScreen<AskStats>(["ask", "stats"], "/api/ask/stats");

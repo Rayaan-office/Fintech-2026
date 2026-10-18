@@ -202,7 +202,7 @@ Any warning blocks automatic processing and sends the item to a person.
 
 ## 12. Answering questions about the business
 
-The chat assistant answers using read-only tools that run the calculations above. It never reads raw documents.
+The chat assistant answers using read-only tools that run the calculations above. It never reads raw documents: document search uses the text the AI was already shown when we read each document, cleaned again as described below.
 
 | Tool | Answers questions such as |
 |---|---|
@@ -214,8 +214,45 @@ The chat assistant answers using read-only tools that run the calculations above
 | What-if | "Can I afford a new van next month?" |
 | Financing options | "How could I cover a shortfall in December?" |
 | Recommendations | "Is there anything I should look at?" |
+| Totals from the records | "How much did we spend by category each month this year?", "How many invoices did we send in March?" |
+| Search the documents | "Which supplier mentions late payment fees?" |
 
-How it stays safe and correct:
+### Totals from the records
+
+For questions the other tools don't cover, the AI fills in a small form and our code builds the query. The AI never writes SQL.
+
+| Choice | Allowed values |
+|---|---|
+| What to count | sales invoices, bills, money in at the bank, money out at the bank, payment platform fees |
+| Filters | one supplier or customer (by placeholder), one category from the list we give it, a date range |
+| Date range | up to 24 months; with no dates, the last 12 months |
+| Group by | month, category, supplier or customer, or nothing |
+| Measure | total, count or average |
+
+The query uses only these columns, in the same read-only transaction that sees one business, and leaves out void records and other currencies. It returns at most 24 rows. Money is written the same way as everywhere else, and suppliers and customers appear only as placeholders. The list of categories we give the AI holds plain words only: any category that looks like a name or a personal detail is left out. If the AI names a supplier or customer we don't know, we count nothing rather than give a total for everyone.
+
+### Searching the documents
+
+We keep a full-text index (Postgres `tsvector` with a GIN index) over each document's text as the AI saw it when we read it, so it already has placeholders in place of personal details. The search words come from the AI, which only ever saw the question with details hidden. Searching for a real name or number therefore finds nothing. We take the best three documents, and up to two short windows around the words that matched, about 300 characters in all.
+
+Each passage is cleaned again before it goes anywhere:
+1. **Its own placeholders become neutral tags.** A document numbers its hidden details from 1, and so does the chat, so `[PERSON_1]` in a document could be confused with `[PERSON_1]` in the question. They become tags such as `[hidden person]` or `[hidden bank account]`, which are never put back.
+2. **Details still found are hidden.** We run the detectors from section 1 over the whole text: patterns such as emails and bank details first, then supplier and customer names become the chat's placeholders, then people's names. This catches anything missed when the document was read.
+3. **The windows are cut afterwards**, on whole words, and never split a placeholder or a tag. The detectors run once more over each window.
+4. **The usual steps follow.** Like every tool result, the passages are hidden again with the chat's numbering, and the final scan checks the exact text sent.
+
+Earlier turns of a conversation get the same treatment as step 1 when they go back to the AI: supplier and customer placeholders keep their numbers, which are the same in every turn, and any other placeholder becomes a neutral tag.
+
+The app shows the same cleaned passage under the answer, linked to its document. Only people whose role lets them review documents can search them.
+
+The search sits behind one function, so a semantic search (using embeddings) could replace it later without changing how passages are cleaned. That would need the pgvector database image and a local model, so we have left it out for now.
+
+### What we measure
+
+For each person we count the questions answered from our records, and how many of those passed the fact check on the first try. The Ask page shows both.
+
+### How it stays safe and correct
+
 - **Names hidden.** Supplier and customer names in the question (including a short form such as "Acme") become placeholders, other personal details are hidden as in section 1, and tool results use the same placeholders.
 - **Fixed, read-only tools.** The AI can only pick tools from this list, at most three per question. They run in a database transaction that refuses any change and sees one business. Tools the person's role doesn't allow (financing, for bookkeepers) are left out and the answer says so. Questions not about the business are declined.
 - **Fact check.** Every figure in the answer must come from the tool results or the question, as in section 9. After one rewrite we show the figures in plain form instead.

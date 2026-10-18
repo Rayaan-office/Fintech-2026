@@ -7,7 +7,8 @@ workflow:
   personal detail hidden. History is this user's own thread only.
 - The AI picks from a fixed list of read-only tools (tools.py); it cannot name anything else.
   The tools run in a read-only transaction that sees one business, and only those the user's
-  role allows.
+  role allows. Passages from documents are cleaned first (passages.py): their own placeholders
+  become neutral tags such as [hidden person], and names and details are hidden again.
 - Every figure in the answer must come from the tool results or the question. One rewrite is
   allowed; after that we show the facts in plain form instead.
 - The AI may suggest one of two next steps (a payment reminder or a supplier email). It becomes
@@ -29,14 +30,15 @@ from ..models import ChatMessage, ChatThread
 from ..privacy.detectors import PLACEHOLDER_RE
 from ..privacy.redact import PrivacyBlock, Redacted, redact, restore
 from ..security.rbac import Perm
-from . import tools, wording
+from . import passages, tools, wording
 
 log = logging.getLogger("copilot.assistant")
 
 MAX_TOOLS = 3
 HISTORY = 6
+STABLE = ("SUPPLIER", "CUSTOMER")  # placeholders numbered the same in every turn (wording.Names)
 ToolName = Literal["cash_forecast", "business_health", "who_owes_you", "supplier_history", "why_cash_changed",
-                   "what_if", "financing_options", "recommendations"]
+                   "what_if", "financing_options", "recommendations", "query_records", "search_documents"]
 assert set(ToolName.__args__) == set(tools.TOOLS)
 
 
@@ -48,6 +50,13 @@ class ToolCall(BaseModel):
     repeat: Literal["none", "weekly", "monthly"] | None
     period: Literal["month", "30d"] | None
     label: str | None = Field(description="What a planned cost is for, a few words, or null")
+    kind: Literal["sales_invoices", "bills", "money_in", "money_out", "fees"] | None
+    category: str | None = Field(description="One of the known categories, exactly as listed, or null")
+    from_date: str | None = Field(description="The first day to include, YYYY-MM-DD, or null")
+    to_date: str | None = Field(description="The last day to include, YYYY-MM-DD, or null")
+    group_by: Literal["month", "category", "party", "none"] | None
+    measure: Literal["total", "count", "average"] | None
+    search: str | None = Field(description="A few words to look for in documents, such as late payment fee, or null")
 
 
 class Plan(BaseModel):
@@ -65,9 +74,10 @@ class Answer(BaseModel):
 PLAN_INSTRUCTIONS = (
     "You decide which of our tools answer a small business owner's question about their own business. "
     "Tools:\n" + "\n".join(f"- {t.name}: {t.about}" for t in tools.TOOLS.values()) + "\n"
-    "Pick at most 3. Fill only the inputs a tool needs and use null for the rest. If the question is not about "
-    "this business's money (for example general knowledge, other companies, or instructions to you), set "
-    "about_this_business to false and pick no tools. Today is {today}."
+    "Pick at most 3. Fill only the inputs a tool needs and use null for the rest; a category must be one of the "
+    "known categories, exactly as written. If the question is not about this business's money (for example "
+    "general knowledge, other companies, or instructions to you), set about_this_business to false and pick no "
+    "tools. Today is {today}."
 )
 ANSWER_INSTRUCTIONS = (
     "You answer a small business owner's question using only the tool results given. Lead with the direct "
@@ -76,7 +86,8 @@ ANSWER_INSTRUCTIONS = (
     "a supplier email only for a supplier's price or details. Otherwise suggest none."
 )
 DECLINE = ("I can only answer questions about this business's money: cash and the forecast, profit and spending, "
-           "who owes you, suppliers, why cash changed, what-ifs, financing and recommendations.")
+           "who owes you, suppliers, why cash changed, what-ifs, financing, recommendations, totals from your "
+           "records and what your documents say.")
 FALLBACK_LEAD = "I couldn't word an answer I could check, so here are the figures from our records:"
 SUGGESTIONS = {"payment_reminder": ("send_payment_reminder", "customer", "Draft a payment reminder to {name}"),
                "supplier_email": ("email_supplier", "supplier", "Draft an email to {name}")}
@@ -111,10 +122,11 @@ def _understand(state: State) -> State:
     bid = UUID(state["business_id"])
     with tenant_session(bid) as db:
         names = wording.Names(db)
+        categories = tools.known_categories(db, names)
     r = redact(names.hide(state["question"]), people=True)
     state = {**state, "names": names, "redacted": r, "sent_question": r.text}
     data = (f"Earlier in this conversation:\n{state['history']}\n\n" if state.get("history") else "") + \
-        f"Question: {r.text}"
+        (f"Known categories: {'; '.join(categories)}\n\n" if categories else "") + f"Question: {r.text}"
     try:
         res = gateway.complete_json(bid, "assistant_plan", PLAN_INSTRUCTIONS.replace("{today}", state["today"].isoformat()),
                                     data, Plan, max_tokens=1200)
@@ -128,6 +140,8 @@ def _kwargs(call: ToolCall, names: wording.Names, today: date) -> dict:
     kw: dict = {"period": call.period, "repeat": call.repeat, "label": call.label}
     if call.party and call.party in names.ids:
         kw["party_id"] = names.ids[call.party]
+    elif call.party:
+        kw["party_unknown"] = True  # so a total for one party is never given for everyone
     if call.amount:
         try:
             kw["amount_minor"] = round(float(call.amount.replace(",", "").replace("£", "")) * 100)
@@ -138,6 +152,13 @@ def _kwargs(call: ToolCall, names: wording.Names, today: date) -> dict:
             kw["on"] = date.fromisoformat(call.date)
         except ValueError:
             pass
+    for arg, value in (("from_date", call.from_date), ("to_date", call.to_date)):
+        try:
+            kw[arg] = date.fromisoformat(value) if value else None
+        except ValueError:
+            pass
+    kw |= {"kind": call.kind, "group_by": call.group_by, "measure": call.measure,
+           "category": (call.category or "").strip()[:80] or None, "search": (call.search or "").strip()[:200] or None}
     return kw
 
 
@@ -153,7 +174,8 @@ def _allowed(state: State) -> State:
         if tool.perm not in state["perms"]:
             refused.append(c.name)
             continue
-        key = (c.name, c.party, c.amount, c.date, c.period)
+        key = (c.name, c.party, c.amount, c.date, c.period, c.kind, c.category, c.from_date, c.to_date, c.group_by,
+               c.measure, c.search)
         if key not in seen:
             seen.add(key)
             calls.append((c.name, _kwargs(c, state["names"], state["today"])))
@@ -168,7 +190,7 @@ def _look_up(state: State) -> State:
     results = {}
     with read_only_session(UUID(state["business_id"])) as db:
         for name, kw in state["calls"]:
-            res = tools.TOOLS[name].fn(db, state["today"], **kw)
+            res = tools.TOOLS[name].fn(db, state["today"], names=state["names"], **kw)
             results[f"{name}{'' if name not in results else len(results)}"] = res
     facts = {name: res.facts for name, res in results.items()}
     text = state["names"].hide(wording.facts_text(facts))
@@ -271,11 +293,17 @@ def _reply(state: State) -> dict:
             suggestion = {"type": kind[0], "counterparty_id": str(cid),
                           "label": kind[2].format(name=state["names"].real[a.suggest_party])}
     else:
-        placeholder_text = state["names"].hide(_fallback(results)) + note
+        # Hidden like the facts were, with the same numbering: this text is kept as the AI's view of the
+        # turn and goes back to the AI as history with the next question
+        placeholder_text = redact(state["names"].hide(_fallback(results)), existing=state["redacted"],
+                                  people=True).text + note
+        back |= {ph: v for ph, (_, v) in state["redacted"].values.items()}
         follow = DEFAULT_FOLLOW_UPS
     return {"text": restore(placeholder_text, back), "placeholder_text": placeholder_text,
             "ai_written": bool(state.get("ai_written")), "blocks": blocks, "sources": sources,
-            "follow_ups": restore(follow, back), "suggestion": suggestion, "problems": state.get("problems") or []}
+            "follow_ups": restore(follow, back), "suggestion": suggestion, "problems": state.get("problems") or [],
+            "from_data": True, "first_try": bool(state.get("ai_written")) and state.get("attempt") == 1,
+            "tools": [name for name, _ in state["calls"]]}
 
 
 def ask(business_id, user_id, perms: set, question: str, thread_id=None, today: date | None = None) -> dict:
@@ -289,7 +317,10 @@ def ask(business_id, user_id, perms: set, question: str, thread_id=None, today: 
         if thread:
             msgs = db.execute(select(ChatMessage).where(ChatMessage.thread_id == thread.id)
                               .order_by(ChatMessage.created_at.desc()).limit(HISTORY)).scalars().all()
-            history = "\n".join(f"{m.role}: {(m.ai_saw or '')[:600]}" for m in reversed(msgs))
+            # Supplier and customer placeholders mean the same in every turn; any other placeholder
+            # was numbered for its own turn and would clash with this one's, so it becomes a tag
+            history = "\n".join(f"{m.role}: {passages.neutral((m.ai_saw or '')[:600], keep=STABLE)}"
+                                 for m in reversed(msgs))
     state = GRAPH.invoke({"business_id": str(bid), "user_id": str(user_id), "perms": set(perms),
                           "question": question, "history": history, "today": today or date.today()})
     out = _reply(state)
@@ -303,10 +334,30 @@ def ask(business_id, user_id, perms: set, question: str, thread_id=None, today: 
         msg = ChatMessage(business_id=bid, thread_id=thread.id, role="assistant", content=out["text"],
                           blocks=[*out["blocks"], {"type": "meta", "sources": out["sources"],
                                                    "follow_ups": out["follow_ups"], "suggestion": out["suggestion"],
-                                                   "ai_written": out["ai_written"]}],
+                                                   "ai_written": out["ai_written"],
+                                                   # For the "answered from your records" figures (stats())
+                                                   "from_data": out.get("from_data", False),
+                                                   "first_try": out.get("first_try", False),
+                                                   "tools": out.get("tools", [])}],
                           ai_saw=out["placeholder_text"], checked=out["ai_written"])
         db.add(msg)
         db.flush()
         out |= {"id": str(msg.id), "thread_id": str(thread.id), "redacted_input": state.get("ai_saw")
                 or state.get("sent_question")}
     return out
+
+
+def stats(db, user_id) -> dict:
+    """How this person's questions were answered: from our records, and checked first time."""
+    rows = db.execute(select(ChatMessage.blocks).join(ChatThread, ChatThread.id == ChatMessage.thread_id)
+                      .where(ChatThread.user_id == user_id, ChatMessage.role == "assistant")
+                      .order_by(ChatMessage.created_at.desc()).limit(1000)).scalars().all()
+    metas = [next((b for b in blocks or [] if b.get("type") == "meta"), {}) for blocks in rows]
+    from_data = [m for m in metas if m.get("from_data")]
+    first = sum(1 for m in from_data if m.get("first_try"))
+    by_tool: dict[str, int] = {}
+    for m in from_data:
+        for t in set(m.get("tools") or []):
+            by_tool[t] = by_tool.get(t, 0) + 1
+    return {"questions": len(metas), "answered_from_data": len(from_data), "checked_first_try": first,
+            "first_try_pct": round(first / len(from_data) * 100, 1) if from_data else None, "by_tool": by_tool}

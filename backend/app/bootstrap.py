@@ -40,6 +40,10 @@ MIGRATIONS = [
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS learned jsonb NOT NULL DEFAULT '{}'",
     # Getting paid
     "ALTER TABLE records ADD COLUMN IF NOT EXISTS method varchar(30)",
+    # Ask anything: full-text search over the text the AI was shown (placeholders only)
+    ("ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_tsv tsvector GENERATED ALWAYS AS "
+     "(to_tsvector('english'::regconfig, coalesce(redacted_text, ''))) STORED"),
+    "CREATE INDEX IF NOT EXISTS ix_documents_search ON documents USING gin (search_tsv)",
 ]
 
 
