@@ -228,11 +228,7 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 | F3 | Inbox, documents review, activity, connections | 0, 2–5 | Done |
 | F4 | Home, cash flow, business health | 6 | Done |
 | F5 | Recommendations, financing, Ask (chat) | 7 | Done |
-| F6 | Interaction features and end-to-end journeys | All | Drafted (search, shortcuts dialog) |
-
-"Drafted" means page layouts and data hooks exist but have not been tried against real endpoints. Each stage finishes them: connect to the real API, add tests, check the screens.
-
-Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs and logs), and each PDF page served as an image at `GET /api/documents/{id}/pages/{n}` (0-based, same access check as the original), because our CSP blocks showing PDFs inside the page.
+| F6 | Interaction features and end-to-end journeys | All | Search, shortcuts and journeys done; the rest to do |
 
 ### F1: Setup, design tokens, app shell, sign-in
 
@@ -283,9 +279,20 @@ Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs a
 - Checked in the browser against the running API at desktop and phone widths, light and dark. Bugs found in that check: long next-step buttons pushed the side panel and the phone layout sideways, the "with this option" line stopped after a few days because its draw-in animation was cut short by re-renders, the newest question sat under the question box, and the question box hint was cut off on phones.
 - Backend gaps found (not fixed): the quote endpoint starts the money tomorrow, while the options list starts it the day before the gap, so a card can say "keeps cash above your safety level" while the sliders at the same amount say it still drops; earlier conversations don't keep "What the AI saw" (the thread endpoint returns it empty).
 
-### F6: Interaction features and end-to-end journeys
+### F6: Interaction features and end-to-end journeys (search, shortcuts and journeys done)
 
-- Search everything (Ctrl/⌘ K), keyboard shortcuts and the `?` dialog, swipe review on phones.
-- Show your work (click any number to open its source), phone handoff by QR code, Today briefing read aloud.
-- Fraud drill polish, reduce-motion check, accessibility pass.
-- Playwright journeys for the demo: upload a bill, approve it, fraud drill, what-if, ask a question.
+- Search everything (Ctrl/⌘ K, `api/search.py`): customers, suppliers, invoices and bills (by number or amount), documents, open recommendations and approvals waiting, best match first. The search goes in the request body, never in an address or a log; results link by id and never show bank or contact details.
+- Each PDF page is shown as a picture (`/api/documents/{id}/pages/{n}`), with the same access check as the original, so the review view shows the bill with the fields the AI read marked on it.
+- Keyboard shortcuts and the `?` dialog.
+- Browser journeys (Playwright) run a second copy of the app on its own ports and its own database, filled with the demo story by `tests/e2e/seed.py`, so they never touch development data. The AI and the mailbox are the real ones. 7 journeys pass:
+  - a bookkeeper signs in without two-step; an owner sets up two-step and passes it;
+  - a bookkeeper uploads a bill, the AI reads it, an owner approves it, and the activity log shows every step, including that personal details were hidden before the AI read the bill;
+  - fraud drill: the same supplier's bill with new bank details is flagged in the inbox and leads the recommendations, marked urgent;
+  - what-if: moving a bill shows the new lowest point and changes nothing;
+  - ask: an answer from the records, where "What the AI saw" has placeholders, not the customers' names;
+  - keyboard: `?` lists the shortcuts, and search finds a bill and opens it, without the search in the address.
+- Tests: 46 new backend tests (search, page pictures, isolation and roles), 4 new frontend tests; 530 backend and 160 frontend tests pass.
+- Bugs found by the journeys:
+  - `?` never opened the shortcuts dialog (it listened for "?" without Shift);
+  - on a new business, the run after an upload and "Check now" both added the same new recommendations, so "Check now" failed.
+- Still to do: swipe review on phones, show your work (click a number to open its source), phone handoff polish, Today briefing read aloud, reduce-motion check, accessibility pass.

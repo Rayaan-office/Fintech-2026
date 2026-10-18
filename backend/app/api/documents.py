@@ -160,6 +160,40 @@ def original(document_id: UUID, p: Principal = Depends(current_principal), db: S
         "img-src data: blob:; object-src 'none'; frame-ancestors 'self'", "X-Frame-Options": "SAMEORIGIN"})
 
 
+PAGE_ZOOM = 1.5
+PAGE_MAX_PX = 3000  # a very large page is scaled down rather than rendered at full size
+
+
+@router.get("/{document_id}/pages/{n}")
+def page_image(document_id: UUID, n: int, p: Principal = Depends(current_principal), db: Session = Depends(tenant_db)):
+    """One page of a PDF original as a picture (0 is the first page). Our security policy keeps PDFs out
+    of the page itself, so the review view shows these instead. Same access as the original."""
+    import fitz
+
+    from ..config import get_settings
+
+    d = _get(db, p, document_id)
+    if d.mime != "application/pdf" or not 0 <= n < get_settings().upload_max_pages or (d.pages and n >= d.pages):
+        raise HTTPException(404, "Not found.")
+    try:
+        data = archive.get(d.object_key, d.sha256)
+    except archive.ArchiveTampered:
+        audit.record(db, d.business_id, "system", "archive_tampered", subject=f"document:{d.id}")
+        raise HTTPException(409, "The stored original no longer matches its fingerprint.")
+    try:
+        with fitz.open(stream=data, filetype="pdf") as pdf:
+            if n >= pdf.page_count:
+                raise HTTPException(404, "Not found.")
+            page = pdf[n]
+            zoom = min(PAGE_ZOOM, PAGE_MAX_PX / max(page.rect.width, page.rect.height, 1))
+            png = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False).tobytes("png")
+    except (fitz.FileDataError, RuntimeError, ValueError):
+        raise HTTPException(404, "Not found.")
+    audit.record(db, d.business_id, p.actor, "original_viewed", subject=f"document:{d.id}", details={"page": n})
+    return Response(png, media_type="image/png", headers={
+        "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
 class FieldEdit(BaseModel):
     fields: dict[str, str] = Field(max_length=20)
 

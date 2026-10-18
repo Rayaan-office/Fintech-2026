@@ -11,7 +11,7 @@ They use their own database (`copilot_test`), created automatically, so they nev
 | `backend/regression` | One test for every bug we fix, named after the bug, so it can't come back | As needed |
 | `backend/contract` | Our connectors still understand the real sandbox responses | Real sandboxes, only with `--live` |
 | `frontend` | Components and screens (Vitest) | Browser simulation |
-| `e2e` | The demo journeys in a real browser (Playwright) | The running app |
+| `e2e` | The demo journeys in a real browser (Playwright) | A second copy of the app on ports 5180 and 8100, with its own database (`copilot_e2e`) filled with the demo story; the real AI and the mailbox |
 
 ## Running
 
@@ -25,6 +25,12 @@ cd backend && uv run pytest
 
 ```bash
 cd backend && uv run pytest --live
+```
+
+The browser journeys start their own copy of the app and fill its database first, so the copy you use for development is never touched:
+
+```bash
+cd frontend && npm run e2e
 ```
 
 ## Adding a regression test
