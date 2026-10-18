@@ -1,6 +1,7 @@
 import { ChevronDownIcon, ShieldCheckIcon, SparklesIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useId, useState, type ReactNode } from "react";
+import type { AiWording } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 const PLACEHOLDER = /(\[[A-Z][A-Z0-9_]*_\d+\])/g;
@@ -44,9 +45,15 @@ export function AiText({ text, redactedInput, label = "Checked against your reco
         <span>{label}</span>
       </p>
       <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
-      <WhatTheAiSaw redactedInput={redactedInput} />
+      {redactedInput && <WhatTheAiSaw redactedInput={redactedInput} />}
     </div>
   );
+}
+
+/** The server's wording: with the AI label when the AI wrote it, as plain text when it is our own template. */
+export function Worded({ wording, className }: { wording: AiWording; className?: string }) {
+  if (!wording.ai_written) return <p className={cn("whitespace-pre-wrap text-sm leading-relaxed", className)}>{wording.text}</p>;
+  return <AiText text={wording.text} redactedInput={wording.redacted_input} className={className} />;
 }
 
 /**

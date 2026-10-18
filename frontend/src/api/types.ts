@@ -83,7 +83,13 @@ export type Action = {
 /** Everything a confirmation card needs: the server's pending action. */
 export type Confirmation = Action;
 
-export type AiAnswer = { text: string; redacted_input: string };
+/** Words written by the AI and fact-checked, or our own template when the check failed or AI is paused. */
+export type AiWording = {
+  text: string;
+  /** Exactly what was sent to the AI, with personal details replaced by placeholders ("" when not kept). */
+  redacted_input: string;
+  ai_written: boolean;
+};
 
 export type ForecastPoint = { date: string; expected_minor: number; best_minor: number; worst_minor: number };
 
@@ -159,23 +165,77 @@ export type RecommendationType =
   | "spending_creep"
   | "customer_concentration";
 
+/** One before-and-after line; `before` is empty when there is nothing to compare with. */
+export type Evidence = { label: string; before: string; after: string; record_id?: string };
+
+export type RecommendationNextStep = {
+  label: string;
+  /** An email we can draft, or null for a step the person takes themselves. */
+  kind: "email_supplier" | "send_payment_reminder" | null;
+  href: string | null;
+  can_draft: boolean;
+  /** The drafted email's action, once there is one. */
+  action: { id: string; status: ActionStatus } | null;
+  /** Approvals already waiting about the same thing (changed bank details). */
+  related_action_ids: string[];
+};
+
 export type Recommendation = {
   id: string;
   type: RecommendationType;
   title: string;
-  summary: AiAnswer;
+  summary: AiWording;
+  severity: Severity;
   at_stake_minor: number | null;
   counterparty: string | null;
+  counterparty_id: string | null;
   created_at: string;
+  updated_at: string | null;
+  status: "new" | "dismissed" | "done" | "resolved";
   why: string;
-  evidence: { label: string; before: string; after: string; record?: RecordRef }[];
-  next_step: { label: string; confirmation: Confirmation } | null;
+  evidence: Evidence[];
+  next_step: RecommendationNextStep | null;
+  /** False for changed bank details: a new change is always shown. */
+  can_mute: boolean;
 };
+
+export type RecommendationsRun = { new: number; updated: number; resolved: number };
 
 // Financing
 
+export type FinancingOptionType = "supplier_terms" | "early_payment" | "credit_line" | "term_loan" | "invoice_finance" | "merchant_cash_advance";
+
+/** The option's cost at the middle of its rate range, and what it does to the forecast. */
+export type FinancingQuote = {
+  amount_minor: number;
+  months: number;
+  total_cost_minor: number;
+  /** Cost at the bottom and top of the rate range. */
+  cost_range_minor: [number, number];
+  monthly_repayment_minor: number;
+  fee_minor: number;
+  rate_pct: [number, number] | null;
+  factor: [number, number] | null;
+  yearly_cost_pct: number | null;
+  closes_gap: boolean;
+  lowest_minor: number;
+  lowest_on: string;
+  first_below_on: string | null;
+  /** Plain words, e.g. "With this, cash stays above your safety level for the next 90 days." */
+  forecast_effect: string;
+};
+
+/** The sliders: one option at a chosen amount and length, with the forecast it leads to. */
+export type QuoteResult = FinancingQuote & {
+  option_id: string;
+  eligible: boolean;
+  reasons: string[];
+  series: { date: string; expected_minor: number }[];
+};
+
 export type FinancingOption = {
   id: string;
+  type: FinancingOptionType;
   provider: string;
   product: string;
   free: boolean;
@@ -183,22 +243,61 @@ export type FinancingOption = {
   max_minor: number;
   min_months: number;
   max_months: number;
+  about: string;
+  /** The most this option can give this business. */
+  limit_minor: number;
   eligible: boolean;
+  /** Why not, as near misses where possible ("Available after 18 more months of trading."). */
+  reasons: string[];
   eligibility_note: string | null;
+  quote?: FinancingQuote & { covers_need: boolean };
 };
 
-export type FinancingQuote = {
-  total_cost_minor: number;
-  monthly_repayment_minor: number;
-  /** Plain-words effect on the forecast, e.g. "Cash stays above your safety level until March." */
-  forecast_effect: string;
+export type FinancingGap = {
+  amount_minor: number;
+  starts_on: string;
+  lowest_on: string;
+  ends_on: string;
+  days: number;
+  months: number;
+  safety_level_minor: number;
+  lowest_minor: number;
+  recovers: boolean;
 };
+
+export type ReadinessItem = { id: string; label: string; value: string; ok: boolean; tip: string | null };
+
+export type ProfileField = {
+  field: string;
+  label: string;
+  auto: number | null;
+  value: number | null;
+  corrected: boolean;
+  corrected_by: string | null;
+  corrected_at: string | null;
+};
+
+export type OwnerField = "industry" | "business_type" | "assets" | "credit_band" | "purpose" | "country";
+
+export type BusinessProfile = {
+  values: Record<string, unknown>;
+  fields: ProfileField[];
+  owner_fields: Record<OwnerField, string | null>;
+  choices: { business_type: string[]; credit_band: string[]; purpose: string[] };
+};
+
+export type ProfileUpdate = { owner_fields?: Partial<Record<OwnerField, string | null>>; overrides?: Record<string, number | null> };
 
 export type Financing = {
-  gap: { amount_minor: number; days: number; starts_on: string } | null;
+  gap: FinancingGap | null;
+  need: { amount_minor: number | null; months: number | null; source: "you" | "forecast" | null };
   options: FinancingOption[];
-  readiness: { id: string; label: string; ok: boolean; tip: string | null }[];
-  lender_pack: { available: boolean; confirmation: Confirmation | null };
+  readiness: ReadinessItem[];
+  profile: BusinessProfile;
+  safety_level_minor: number;
+  disclaimer: string;
+  summary: AiWording;
+  lender_pack: { available: boolean; can_share: boolean; approver: string };
 };
 
 // Documents
@@ -290,13 +389,30 @@ export type SyncResult = { ok: true; counts: Record<string, number>; matched: Re
 
 // Ask
 
-export type AskReply = {
-  id: string;
-  answer: AiAnswer;
+/** A chart or table our code builds from the records (never the AI). */
+export type AskBlock =
+  | { type: "chart"; kind: "forecast"; title: string; safety_level_minor: number; points: ForecastPoint[] }
+  | { type: "table"; title: string; columns: string[]; rows: (string | number | null)[][]; money_columns: number[] };
+
+export type AskSuggestion = { type: "send_payment_reminder" | "email_supplier"; counterparty_id: string; label: string };
+
+type AnswerParts = {
+  answer: AiWording;
+  blocks: AskBlock[];
   sources: RecordRef[];
   follow_ups: string[];
-  confirmation: Confirmation | null;
+  /** An email the assistant suggests; it becomes a draft only when clicked. */
+  suggestion: AskSuggestion | null;
 };
+
+export type AskReply = AnswerParts & { id: string; thread_id: string };
+
+export type AskMessage =
+  | { id: string; role: "user"; created_at: string; text: string }
+  | (AnswerParts & { id: string; role: "assistant"; created_at: string; checked: boolean });
+
+export type AskThreadSummary = { id: string; title: string; created_at: string };
+export type AskThread = { id: string; title: string; messages: AskMessage[] };
 
 // Phone handoff
 

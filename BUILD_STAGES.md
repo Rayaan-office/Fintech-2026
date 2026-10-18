@@ -9,14 +9,14 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | Stage | What | Status |
 |---|---|---|
 | 0 | Foundation and document pipeline | Done |
-| 1 | Frontend: see stages F1–F6 below | F1–F3 done; F4–F6 drafted |
+| 1 | Frontend: see stages F1–F6 below | F1–F3 and F5 done; F4 and F6 drafted |
 | 2 | Email inbox connector (Mailpit) | Done |
 | 3 | Payment platform connector (Stripe) | Done |
 | 4 | Bank connector (Plaid) | Done |
 | 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Done |
 | 7 | Approvals, recommendations, financing and assistant | Done |
-| 8 | Frontend: see stages F3–F6 below | Not started |
+| 8 | Frontend: see stages F3–F6 below | F3 and F5 done; F4 and F6 drafted |
 | 9 | Hardening and submission material | Not started |
 
 ## Stage 0: Foundation and document pipeline (done)
@@ -198,7 +198,7 @@ pip-audit and npm audit, end-to-end tests, deployment and testing docs, security
 | F2 | Shared components and test setup | 0 | Done |
 | F3 | Inbox, documents review, activity, connections | 0, 2–5 | Done |
 | F4 | Home, cash flow, business health | 6 | Drafted |
-| F5 | Recommendations, financing, Ask (chat) | 7 | Drafted |
+| F5 | Recommendations, financing, Ask (chat) | 7 | Done |
 | F6 | Interaction features and end-to-end journeys | All | Drafted (search, shortcuts dialog) |
 
 "Drafted" means page layouts and data hooks exist but have not been tried against real endpoints. Each stage finishes them: connect to the real API, add tests, check the screens.
@@ -238,11 +238,16 @@ Endpoints the drafts expect: `POST /api/search` (search terms stay out of URLs a
 - Cash flow: lowest point headline, forecast with best and worst band and bill markers, warnings, drag a bill, add a planned cost.
 - Business health: four headline numbers, one switchable chart, health checks.
 
-### F5: Recommendations, financing, Ask
+### F5: Recommendations, financing, Ask (done)
 
-- Recommendation cards with evidence in the side panel, dismiss and next step.
-- Financing: gap, option cards, amount and term sliders, forecast effect, readiness checklist, lender pack.
-- Ask: chat with small charts, tables, action buttons, follow-up options, approvals in the chat, voice input.
+- Types and hooks now match the Stage 7 routes (`recommendations`, `financing`, `business-profile`, `lender-pack`, `ask`). Wording from the server shows the AI label and "What the AI saw" only when the AI wrote it; our own template shows as plain text.
+- Recommendations: cards with severity, money at stake, the AI summary and "Why am I seeing this?"; the side panel shows the evidence before and after, and links to approvals already waiting about changed bank details. The next step drafts the email and opens its confirmation card, which can be approved there; a draft already waiting opens again, and a sent one says so. Steps without an email link to the page that helps. Dismiss offers "this one" or "this kind for this supplier"; changed bank details have one Dismiss that never mutes. "Check now" runs the checks and says what changed. `?open=<id>` opens one (Ask's sources link here).
+- Financing: the gap headline (how far below the safety level, from when, for how long, and the amount we cost options for), the checked summary, options that fit (free first, then by cost, each with its total, monthly cost and whether cash stays above the safety level), and near misses with what would change. Each option opens a side panel with amount and length sliders that call the quote endpoint (debounced), with the cost, its range, the yearly rate, the forecast effect and a chart of cash with and without it. Owners can compare for their own amount, length and purpose. Readiness checklist with tips. Business profile with each correction next to its automatic value; owners edit what only they know and correct or reset automatic values. Lender pack: download the PDF, or share it, which prepares the pack and shows the approval card (a business owner approves).
+- Ask: answers with charts and tables built from the blocks (every chart has a table view), sources as links, follow-up options on the latest answer, and the suggested email as a button that drafts it and shows its approval card in the chat. Earlier conversations in a side list (a panel on phones), continued with their thread. Voice input kept from the draft.
+- Live updates: `recommendations` and `forecast` events now refresh their screens.
+- Tests: 22 new Vitest tests (recommendations 9, financing 8, Ask 5) with fixtures copied from the API's shapes; 98 frontend tests pass, with typecheck and build.
+- Checked in the browser against the running API at desktop and phone widths, light and dark. Bugs found in that check: long next-step buttons pushed the side panel and the phone layout sideways, the "with this option" line stopped after a few days because its draw-in animation was cut short by re-renders, the newest question sat under the question box, and the question box hint was cut off on phones.
+- Backend gaps found (not fixed): the quote endpoint starts the money tomorrow, while the options list starts it the day before the gap, so a card can say "keeps cash above your safety level" while the sliders at the same amount say it still drops; earlier conversations don't keep "What the AI saw" (the thread endpoint returns it empty).
 
 ### F6: Interaction features and end-to-end journeys
 
