@@ -60,7 +60,10 @@ describe("What we've learned", () => {
     setupPage();
     expect(await screen.findByRole("heading", { name: "What we've learned" })).toBeInTheDocument();
     expect(screen.getByText("4 min")).toBeInTheDocument();
-    expect(screen.getByText(/8 values filled in from your past corrections and kept\. We count about 30 seconds/)).toBeInTheDocument();
+    // The assumption is one click away, not a paragraph on the page
+    expect(screen.queryByText(/We count about 30 seconds/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "How we count time saved" }));
+    expect(await screen.findByText(/8 values filled in from your past corrections and kept\. We count about 30 seconds/)).toBeInTheDocument();
     expect(screen.getByText(/We never learn bank details, contact details, amounts/)).toBeInTheDocument();
     expect(screen.getByText("60%")).toBeInTheDocument();
     expect(screen.getByText("3 of 5 times it was first in the list")).toBeInTheDocument();
@@ -80,7 +83,7 @@ describe("What we've learned", () => {
   it("lets the owner forget one learned value", async () => {
     const { calls } = setupPage();
     const acme = await screen.findByRole("listitem", { name: "Acme Supplies" });
-    await userEvent.click(within(acme).getAllByRole("button", { name: "Forget" })[0]!);
+    await userEvent.click(within(acme).getByRole("button", { name: "Forget What it's for" }));
     await waitFor(() => expect(calls.some((c) => c.path === "/api/learning/reset")).toBe(true));
     expect(bodyOf(calls.find((c) => c.path === "/api/learning/reset")!.init)).toEqual({ scope: "field", counterparty_id: "c1", field: "category_hint" });
     await waitFor(() => expect(screen.getByRole("listitem", { name: "Acme Supplies" })).not.toHaveTextContent("packaging"));
@@ -180,6 +183,19 @@ describe("Less useful to you", () => {
     expect(fold).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(fold);
     expect(await screen.findByRole("listitem", { name: "Software costs crept up" })).toBeInTheDocument();
+  });
+
+  it("opens the fold for a link to a folded recommendation", async () => {
+    const api = mockApi({
+      "GET /api/auth/me": () => ({ status: 200, body: owner }),
+      "GET /api/inbox": () => ({ status: 200, body: { items: [], counts: { to_review: 0, needs_approval: 0 } } }),
+      "GET /api/recommendations": () => ({ status: 200, body: { items: [{ ...recommendation(), less_useful: false }, creep] } }),
+    });
+    vi.stubGlobal("fetch", api.fetchMock);
+    renderApp("/recommendations?open=r5");
+    expect(await screen.findByRole("dialog", { name: "Software costs crept up" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Less useful to you \(1\)/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("listitem", { name: "Software costs crept up" })).toBeInTheDocument();
   });
 
   it("counts opening the suggested page as acting on it", async () => {

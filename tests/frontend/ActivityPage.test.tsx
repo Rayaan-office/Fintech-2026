@@ -19,13 +19,13 @@ const ENTRIES = [
   entry(1, "system", "document_received", { details: { source: "email" } }),
 ];
 
-function setup(check: ActivityCheck = { intact: true, entries: 5, broken_at: null }) {
+function setup(check: ActivityCheck = { intact: true, entries: 5, broken_at: null }, items: ActivityEntry[] = ENTRIES) {
   const api = mockApi({
     "GET /api/auth/me": () => ({ status: 200, body: owner }),
     "GET /api/inbox": () => ({ status: 200, body: { items: [], counts: { to_review: 0, needs_approval: 0 } } }),
     "GET /api/activity": (_init, url) => {
       const actor = url.searchParams.get("actor");
-      return { status: 200, body: { items: actor ? ENTRIES.filter((e) => e.actor.startsWith(actor)) : ENTRIES, total: ENTRIES.length } };
+      return { status: 200, body: { items: actor ? items.filter((e) => e.actor.startsWith(actor)) : items, total: items.length } };
     },
     "GET /api/activity/verify": () => ({ status: 200, body: check }),
   });
@@ -68,20 +68,53 @@ describe("Activity", () => {
     const { calls } = setup();
     await screen.findByRole("list", { name: "Activity log" });
 
-    await userEvent.click(screen.getByRole("tab", { name: "People" }));
+    await userEvent.click(screen.getByRole("radio", { name: "People" }));
     await waitFor(() => expect(calls.some((c) => c.path === "/api/activity" && c.url.searchParams.get("actor") === "user:")).toBe(true));
     await waitFor(() => expect(within(screen.getByRole("list", { name: "Activity log" })).getAllByRole("listitem")).toHaveLength(2));
 
-    await userEvent.click(screen.getByRole("tab", { name: "System" }));
+    await userEvent.click(screen.getByRole("radio", { name: "System" }));
     await waitFor(() => expect(within(screen.getByRole("list", { name: "Activity log" })).getAllByRole("listitem")).toHaveLength(2));
 
-    await userEvent.click(screen.getByRole("tab", { name: "All" }));
+    await userEvent.click(screen.getByRole("radio", { name: "All" }));
     await userEvent.selectOptions(await screen.findByLabelText("Show"), "connections");
     await waitFor(() => expect(within(screen.getByRole("list", { name: "Activity log" })).getAllByRole("listitem")).toHaveLength(1));
 
     await userEvent.selectOptions(screen.getByLabelText("Show"), "all");
     await userEvent.type(screen.getByLabelText("Filter activity"), "corrected");
     expect(within(screen.getByRole("list", { name: "Activity log" })).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("groups steps by day and keeps the fingerprint one click away", async () => {
+    setup();
+    const log = await screen.findByRole("list", { name: "Activity log" });
+    expect(within(log).getByRole("heading", { name: "Today" })).toBeInTheDocument();
+    expect(within(log).queryByText("h50000000000")).not.toBeInTheDocument();
+    await userEvent.click(within(log).getByRole("button", { name: /Approved: record a checked document/ }));
+    expect(within(log).getByText("h50000000000")).toBeInTheDocument();
+    expect(within(log).getByText("#5")).toBeInTheDocument();
+  });
+
+  it("folds the same step repeated in a row into one line", async () => {
+    setup(undefined, [
+      entry(8, "user:u-owner", "original_viewed"),
+      entry(7, "user:u-owner", "original_viewed"),
+      entry(6, "user:u-owner", "original_viewed"),
+      ...ENTRIES,
+    ]);
+    const log = await screen.findByRole("list", { name: "Activity log" });
+    const rows = within(log).getAllByRole("listitem");
+    expect(rows).toHaveLength(6);
+    expect(rows[0]).toHaveTextContent("Opened an original document");
+    expect(rows[0]).toHaveTextContent("×3");
+    await userEvent.click(within(rows[0]!).getByRole("button"));
+    expect(within(rows[0]!).getByText("h80000000000")).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("h60000000000")).toBeInTheDocument();
+  });
+
+  it("explains the tamper-evident chain behind an info button", async () => {
+    setup();
+    await userEvent.click(await screen.findByRole("button", { name: "How the log protects itself" }));
+    expect(await screen.findByText(/fingerprint of the one before it/)).toBeInTheDocument();
   });
 
   it("offers the whole log as a CSV download", async () => {

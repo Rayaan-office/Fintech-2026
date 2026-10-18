@@ -33,7 +33,7 @@ export function LoginPage() {
   };
 
   return (
-    <AuthLayout title="Sign in" description="Welcome back. Sign in to see your business's money in one place.">
+    <AuthLayout title="Sign in" description="Welcome back.">
       <form onSubmit={onSubmit} className="grid gap-4" noValidate={false}>
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
@@ -51,7 +51,7 @@ export function LoginPage() {
           />
         </div>
         <FormError message={login.isError ? errorMessage(login.error) : null} />
-        <Button type="submit" size="lg" disabled={login.isPending || !email || !password}>
+        <Button type="submit" size="lg" className="mt-1" disabled={login.isPending || !email || !password}>
           {login.isPending && <Loader2Icon className="animate-spin" aria-hidden />}
           {login.isPending ? "Signing in…" : "Sign in"}
         </Button>

@@ -6,37 +6,32 @@ import {
   useReactTable,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowDownIcon, ArrowUpIcon, FileTextIcon, TriangleAlertIcon, UploadIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon, CalendarIcon, FileTextIcon, UploadIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
 import { useDocuments, useUploadDocument } from "@/api/hooks";
 import type { DocumentSummary } from "@/api/types";
-import { DOCUMENT_STATUS, DocumentReview, isReading, ReadingStatus } from "@/components/DocumentReview";
+import { DocumentReview, isReading } from "@/components/DocumentReview";
+import { DOC_SOURCE, DocumentStatusCell, kindOf, ReadingNow, SourceIcon, TypeChip } from "@/components/documents/bits";
 import { Initials } from "@/components/Initials";
+import { FilterPills, Meta } from "@/components/kit";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { FocusedPanel } from "@/components/panels";
 import { PhoneHandoff } from "@/components/PhoneHandoff";
 import { QueryView } from "@/components/QueryView";
 import { ListSkeleton } from "@/components/skeletons";
-import { EmptyState } from "@/components/states";
-import { StatusDot } from "@/components/StatusDot";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UploadDropzone } from "@/components/UploadDropzone";
+import { PageDrop, UploadDropzone, UploadError, useUploadPicker } from "@/components/UploadDropzone";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // What the server accepts; it checks each file's contents again
 export const ACCEPT = "application/pdf,image/jpeg,image/png,image/webp,image/tiff,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,.xlsx";
 const HINT = "PDF, photo or spreadsheet, up to 15 MB. Personal details are hidden before the AI reads anything.";
-
-const SOURCE: Record<DocumentSummary["source"], string> = { email: "by email", upload: "uploaded", photo: "photo", statement: "statement" };
-const TYPE: Record<string, string> = { bill: "Bill", invoice: "Invoice", receipt: "Receipt", payment_notice: "Payment notice", credit_note: "Credit note", other: "Document" };
 
 type Filter = "all" | "review" | "awaiting_approval" | "reading";
 const matches = (d: DocumentSummary, f: Filter) => f === "all" || (f === "reading" ? isReading(d.status) : d.status === f);
@@ -45,16 +40,18 @@ export default function DocumentsPage() {
   const docs = useDocuments();
   const upload = useUploadDocument();
   const [params, setParams] = useSearchParams();
-  const showUpload = params.get("upload") === "1";
-  const setShowUpload = (on: boolean) =>
+  const setParam = (key: string, value: string | null) =>
     setParams(
       (p) => {
-        if (on) p.set("upload", "1");
-        else p.delete("upload");
+        if (value) p.set(key, value);
+        else p.delete(key);
         return p;
       },
       { replace: true },
     );
+  // ?upload=1 opens the drop zone (links from Home and search); ?open=<id> opens a document
+  const showDrop = params.get("upload") === "1";
+  const openId = params.get("open");
 
   const onFiles = async (files: File[], fromCamera: boolean) => {
     for (const file of files) {
@@ -65,162 +62,208 @@ export default function DocumentsPage() {
         toast.error(`${file.name}: ${errorMessage(err)}`);
       }
     }
+    if (showDrop) setParam("upload", null);
   };
-
-  const dropzone = <UploadDropzone onFiles={(f, cam) => void onFiles(f, cam)} pending={upload.isPending} accept={ACCEPT} hint={HINT} camera />;
+  const picker = useUploadPicker({ onFiles: (f, cam) => void onFiles(f, cam), accept: ACCEPT, camera: true });
+  const items = docs.data?.items ?? [];
+  const open = items.find((d) => d.id === openId) ?? null;
 
   return (
     <div className="grid grid-cols-1 gap-6">
+      {picker.inputs}
+      <PageDrop onDrop={(files) => picker.take(files)} />
       <PageHeader
         title="Documents"
-        description="Bills, invoices, receipts and statements, with what we found in each."
         actions={
           <>
-            <PhoneHandoff />
-            <Button onClick={() => setShowUpload(!showUpload)} aria-expanded={showUpload}>
+            <PhoneHandoff className="max-sm:hidden" />
+            <Button onClick={picker.pick} disabled={upload.isPending}>
               <UploadIcon aria-hidden /> Upload
             </Button>
           </>
         }
       />
-      {showUpload && dropzone}
-      <QueryView
-        query={docs}
-        loading={<ListSkeleton rows={6} />}
-        empty={<NoDocuments />}
-      >
-        {(data) => (data.items.length === 0 ? (showUpload ? <NoDocuments /> : dropzone) : <DocumentTable items={data.items} />)}
+      <UploadError error={picker.error} />
+      {showDrop && items.length > 0 && <UploadDropzone picker={picker} pending={upload.isPending} hint={HINT} camera onClose={() => setParam("upload", null)} />}
+      <QueryView query={docs} loading={<ListSkeleton rows={6} />} empty={<UploadDropzone picker={picker} pending={upload.isPending} hint={HINT} camera />}>
+        {(data) =>
+          data.items.length === 0 ? (
+            <Empty>
+              <UploadDropzone picker={picker} pending={upload.isPending} hint={HINT} camera />
+            </Empty>
+          ) : (
+            <DocumentTable items={data.items} openId={openId} onOpen={(id) => setParam("open", id)} />
+          )
+        }
       </QueryView>
+
+      <FocusedPanel
+        open={openId !== null}
+        onOpenChange={(o) => !o && setParam("open", null)}
+        title={open ? (open.counterparty ?? open.filename) : "Document"}
+        description={open ? <PanelMeta doc={open} /> : undefined}
+      >
+        {openId && <DocumentReview id={openId} onDone={() => setParam("open", null)} />}
+      </FocusedPanel>
     </div>
   );
 }
 
-function NoDocuments() {
-  return <EmptyState icon={FileTextIcon} title="No documents yet" description="Bills that arrive in your bills inbox appear here automatically. You can also upload one." />;
-}
-
-const col = createColumnHelper<DocumentSummary>();
-
-function DocumentStatusCell({ doc: d }: { doc: DocumentSummary }) {
-  if (isReading(d.status)) return <ReadingStatus stage={d.stage} />;
-  const s = DOCUMENT_STATUS[d.status] ?? { status: "neutral", label: d.status };
+function Empty({ children }: { children: ReactNode }) {
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <StatusDot status={s.status} label={s.label} showLabel className="whitespace-nowrap" />
-      {d.warnings.length > 0 && (
-        <Badge variant="danger" title={d.warnings.map((w) => w.label).join(", ")}>
-          <TriangleAlertIcon aria-hidden /> {d.warnings.length === 1 ? d.warnings[0]!.label : `${d.warnings.length} warnings`}
-        </Badge>
-      )}
-    </span>
+    <div className="grid gap-3">
+      {children}
+      <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <FileTextIcon className="size-4" aria-hidden /> Bills sent to your bills inbox appear here by themselves.
+      </p>
+    </div>
   );
 }
 
-function DocumentTable({ items }: { items: DocumentSummary[] }) {
+/** Kind, source and when, under the panel title. The file name is in the panel itself. */
+function PanelMeta({ doc: d }: { doc: DocumentSummary }) {
+  const kind = kindOf(d);
+  const source = DOC_SOURCE[d.source];
+  return (
+    <Meta
+      className="mt-1"
+      items={[
+        kind && { icon: kind.icon, label: kind.label },
+        source && { icon: source.icon, label: source.label },
+        { icon: CalendarIcon, label: formatRelative(d.created_at) },
+      ]}
+    />
+  );
+}
+
+const col = createColumnHelper<DocumentSummary>();
+type ColMeta = { numeric?: boolean; className?: string };
+
+function DocumentTable({ items, openId, onOpen }: { items: DocumentSummary[]; openId: string | null; onOpen: (id: string) => void }) {
   const currency = useCurrentUser().business.currency;
   const [filter, setFilter] = useState<Filter>("all");
   const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
-  // ?open=<id> opens a document directly (links from approval cards)
-  const [params, setParams] = useSearchParams();
-  const openId = params.get("open");
-  const setOpenId = (id: string | null) =>
-    setParams(
-      (p) => {
-        if (id) p.set("open", id);
-        else p.delete("open");
-        return p;
-      },
-      { replace: true },
-    );
-  const open = items.find((d) => d.id === openId) ?? null;
 
+  const counts = useMemo(() => {
+    const c = { all: items.length, review: 0, awaiting_approval: 0, reading: 0 } as Record<Filter, number>;
+    for (const d of items) for (const f of ["review", "awaiting_approval", "reading"] as const) if (matches(d, f)) c[f] += 1;
+    return c;
+  }, [items]);
   const rows = useMemo(() => items.filter((d) => matches(d, filter)), [items, filter]);
+  const reading = useMemo(() => items.filter((d) => isReading(d.status)), [items]);
+
   const columns = useMemo(
     () => [
       col.accessor((d) => d.counterparty ?? d.filename, {
-        id: "document",
-        header: "Document",
+        id: "party",
+        header: "Party",
         cell: ({ row }) => {
           const d = row.original;
           return (
-            <span className="flex min-w-0 items-center gap-3">
-              {d.counterparty ? <Initials name={d.counterparty} /> : <FileTextIcon className="size-8 shrink-0 p-1.5 text-muted-foreground" aria-hidden />}
-              <span className="min-w-0">
-                <span className="block truncate font-medium">{d.counterparty ?? d.filename}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {TYPE[d.doc_type ?? ""] ?? "Document"} · {SOURCE[d.source] ?? d.source}
-                  {d.counterparty && ` · ${d.filename}`}
-                </span>
-              </span>
-            </span>
+            <button
+              type="button"
+              className="flex w-full min-w-0 items-center gap-3 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(d.id);
+              }}
+            >
+              {d.counterparty ? <Initials name={d.counterparty} /> : <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted"><FileTextIcon className="size-4 text-muted-foreground" aria-hidden /></span>}
+              <span className="min-w-0 truncate font-medium">{d.counterparty ?? d.filename}</span>
+              {/* The file name stays findable (and in the row's name) without taking a line */}
+              {d.counterparty && <span className="sr-only">, {d.filename}</span>}
+            </button>
           );
         },
+        meta: { className: "w-[34%]" } satisfies ColMeta,
       }),
-      col.accessor("created_at", { header: "Received", cell: (c) => <span className="whitespace-nowrap text-muted-foreground">{formatRelative(c.getValue())}</span> }),
+      col.accessor((d) => d.doc_type ?? "", { id: "type", header: "Type", cell: ({ row }) => <TypeChip doc={row.original} /> }),
+      col.accessor("source", { header: "Source", cell: (c) => <SourceIcon source={c.getValue()} />, enableSorting: false }),
+      col.accessor("created_at", {
+        header: "Received",
+        cell: (c) => (
+          <time dateTime={c.getValue()} className="whitespace-nowrap text-muted-foreground">
+            {formatRelative(c.getValue())}
+          </time>
+        ),
+      }),
       col.accessor("total_minor", {
-        header: "Total",
+        header: "Amount",
         sortUndefined: "last",
         cell: (c) => {
           const v = c.getValue();
-          return v === null ? <span className="text-muted-foreground">—</span> : <Money minor={v} currency={c.row.original.currency || currency} />;
+          return v === null ? <span className="text-muted-foreground">—</span> : <Money minor={v} currency={c.row.original.currency || currency} className="font-medium" />;
         },
-        meta: { numeric: true },
+        meta: { numeric: true } satisfies ColMeta,
       }),
-      col.accessor("status", {
-        header: "Status",
-        cell: ({ row }) => <DocumentStatusCell doc={row.original} />,
-      }),
+      col.accessor("status", { header: "Status", cell: ({ row }) => <DocumentStatusCell doc={row.original} /> }),
     ],
-    [currency],
+    [currency, onOpen],
   );
 
   const table = useReactTable({ data: rows, columns, state: { sorting }, onSortingChange: setSorting, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel() });
 
   return (
     <>
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-        <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="review">Needs a check</TabsTrigger>
-          <TabsTrigger value="awaiting_approval">Waiting</TabsTrigger>
-          <TabsTrigger value="reading">Reading</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <ReadingNow docs={reading} onOpen={onOpen} />
+      <FilterPills
+        label="Show"
+        value={filter}
+        onChange={setFilter}
+        // Empty filters stay out of the way
+        options={(
+          [
+            { value: "all", label: "All", count: counts.all },
+            { value: "review", label: "Needs a check", count: counts.review },
+            { value: "awaiting_approval", label: "Waiting", count: counts.awaiting_approval },
+            { value: "reading", label: "Reading", count: counts.reading },
+          ] as const
+        ).filter((o) => o.value === "all" || o.count > 0 || o.value === filter)}
+      />
       {/* Phones get a simple list; the table needs more width */}
-      <ul aria-label="Documents" className="divide-y rounded-xl border bg-card shadow-card sm:hidden">
+      <ul aria-label="Documents" className="divide-y rounded-xl border bg-card sm:hidden">
         {table.getRowModel().rows.map(({ original: d }) => (
           <li key={d.id}>
-            <button type="button" className={cn("flex w-full items-start gap-3 px-4 py-3 text-left", d.id === openId && "bg-accent/70")} onClick={() => setOpenId(d.id)}>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{d.counterparty ?? d.filename}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {TYPE[d.doc_type ?? ""] ?? "Document"} · {formatRelative(d.created_at)}
-                </span>
-                <span className="mt-1 block">
-                  <DocumentStatusCell doc={d} />
-                </span>
+            <button type="button" className={cn("flex w-full items-center gap-3 px-4 py-3 text-left", d.id === openId && "bg-accent/70")} onClick={() => onOpen(d.id)}>
+              {d.counterparty ? <Initials name={d.counterparty} /> : <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted"><FileTextIcon className="size-4 text-muted-foreground" aria-hidden /></span>}
+              <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="truncate text-sm font-medium">{d.counterparty ?? d.filename}</span>
+                <DocumentStatusCell doc={d} plain />
               </span>
-              {d.total_minor !== null && <Money minor={d.total_minor} currency={d.currency || currency} className="text-sm font-medium" />}
+              <span className="grid shrink-0 justify-items-end gap-0.5">
+                {d.total_minor !== null && <Money minor={d.total_minor} currency={d.currency || currency} className="text-sm font-medium" />}
+                <span className="text-xs text-muted-foreground">{formatRelative(d.created_at)}</span>
+              </span>
             </button>
           </li>
         ))}
         {rows.length === 0 && <li className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing here with this filter.</li>}
       </ul>
-      <div className="overflow-x-auto rounded-xl border bg-card shadow-card max-sm:hidden">
-        <table className="w-full min-w-[640px] text-sm">
+      <div className="relative min-w-0 overflow-x-auto rounded-xl border bg-card max-sm:hidden">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id} className="border-b text-left text-xs text-muted-foreground">
                 {hg.headers.map((h) => {
                   const sorted = h.column.getIsSorted();
-                  const numeric = (h.column.columnDef.meta as { numeric?: boolean } | undefined)?.numeric;
+                  const meta = h.column.columnDef.meta as ColMeta | undefined;
+                  const label = flexRender(h.column.columnDef.header, h.getContext());
                   return (
-                    <th key={h.id} scope="col" className={cn("px-4 py-2.5 font-medium", numeric && "text-right")} aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}>
-                      <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={h.column.getToggleSortingHandler()}>
-                        {flexRender(h.column.columnDef.header, h.getContext())}
-                        {sorted === "asc" && <ArrowUpIcon className="size-3" aria-hidden />}
-                        {sorted === "desc" && <ArrowDownIcon className="size-3" aria-hidden />}
-                      </button>
+                    <th
+                      key={h.id}
+                      scope="col"
+                      className={cn("px-4 py-2.5 font-medium", meta?.numeric && "text-right", meta?.className)}
+                      aria-sort={!h.column.getCanSort() ? undefined : sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}
+                    >
+                      {h.column.getCanSort() ? (
+                        <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={h.column.getToggleSortingHandler()}>
+                          {label}
+                          {sorted === "asc" && <ArrowUpIcon className="size-3" aria-hidden />}
+                          {sorted === "desc" && <ArrowDownIcon className="size-3" aria-hidden />}
+                        </button>
+                      ) : (
+                        label
+                      )}
                     </th>
                   );
                 })}
@@ -231,18 +274,12 @@ function DocumentTable({ items }: { items: DocumentSummary[] }) {
             {table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                className={cn("cursor-pointer border-b last:border-0 hover:bg-accent/60", row.original.id === openId && "bg-accent/70")}
-                onClick={() => setOpenId(row.original.id)}
+                className={cn("cursor-pointer border-b transition-colors last:border-0 hover:bg-accent/50", row.original.id === openId && "bg-accent/70")}
+                onClick={() => onOpen(row.original.id)}
               >
-                {row.getVisibleCells().map((cell, i) => (
-                  <td key={cell.id} className={cn("px-4 py-3", (cell.column.columnDef.meta as { numeric?: boolean } | undefined)?.numeric && "text-right")}>
-                    {i === 0 ? (
-                      <button type="button" className="w-full text-left" onClick={(e) => { e.stopPropagation(); setOpenId(row.original.id); }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </button>
-                    ) : (
-                      flexRender(cell.column.columnDef.cell, cell.getContext())
-                    )}
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className={cn("px-4 py-3", (cell.column.columnDef.meta as ColMeta | undefined)?.numeric && "text-right")}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
               </tr>
@@ -251,10 +288,6 @@ function DocumentTable({ items }: { items: DocumentSummary[] }) {
         </table>
         {rows.length === 0 && <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing here with this filter.</p>}
       </div>
-
-      <FocusedPanel open={open !== null} onOpenChange={(o) => !o && setOpenId(null)} title={open ? (open.counterparty ?? open.filename) : ""} description={open?.filename}>
-        {open && <DocumentReview id={open.id} onDone={() => setOpenId(null)} />}
-      </FocusedPanel>
     </>
   );
 }

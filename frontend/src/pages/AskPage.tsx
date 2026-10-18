@@ -1,44 +1,62 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpIcon, FileTextIcon, HistoryIcon, Loader2Icon, MailIcon, MicIcon, PlusIcon } from "lucide-react";
+import { FileTextIcon, HistoryIcon, PlusIcon, ShieldCheckIcon, SparklesIcon, TruckIcon, UsersIcon, WalletIcon, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link } from "react-router";
-import { toast } from "sonner";
-import { useCurrentUser } from "@/api/auth";
+import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/api/client";
-import { useAsk, useAskAct, useAskStats, useAskThread, useAskThreads } from "@/api/hooks";
-import type { Action, AskBlock, AskMessage, AskPassagesBlock, AskReply, AskThread } from "@/api/types";
-import { ActionConfirmation } from "@/components/ActionConfirmation";
-import { Worded } from "@/components/AiText";
-import { ChartCard } from "@/components/ChartCard";
-import { CashAreaChart } from "@/components/charts";
-import { Money } from "@/components/Money";
+import { useAsk, useAskStats, useAskThread, useAskThreads } from "@/api/hooks";
+import type { AskMessage, AskReply, AskThread } from "@/api/types";
+import { Answer, Question, Thinking } from "@/components/ask/Answer";
+import { Composer } from "@/components/ask/Composer";
+import { IconTile } from "@/components/kit";
 import { PageHeader } from "@/components/PageHeader";
 import { SidePanel } from "@/components/panels";
-import { ListSkeleton } from "@/components/skeletons";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
-import { formatDate, formatRelative } from "@/lib/format";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const STARTERS = [
-  "Who owes me the most?",
-  "What does my cash look like next month?",
-  "Have any suppliers raised their prices?",
-  "Why did my cash change this month?",
-  "Can I afford an £18,000 van?",
+/** Example questions by topic: a short label on the chip, the full question sent when clicked. */
+const TOPICS: { id: string; label: string; icon: LucideIcon; questions: [label: string, question: string][] }[] = [
+  {
+    id: "cash",
+    label: "Cash",
+    icon: WalletIcon,
+    questions: [
+      ["Cash next month", "What does my cash look like next month?"],
+      ["Why cash changed", "Why did my cash change this month?"],
+      ["Afford an £18k van?", "Can I afford an £18,000 van?"],
+    ],
+  },
+  {
+    id: "customers",
+    label: "Customers",
+    icon: UsersIcon,
+    questions: [
+      ["Who owes the most", "Who owes me the most?"],
+      ["Invoices each month", "How many invoices did we send each month?"],
+    ],
+  },
+  {
+    id: "suppliers",
+    label: "Suppliers",
+    icon: TruckIcon,
+    questions: [
+      ["Price rises", "Have any suppliers raised their prices?"],
+      ["Spend by category", "How much did we spend on each category this year?"],
+    ],
+  },
+  {
+    id: "documents",
+    label: "Documents",
+    icon: FileTextIcon,
+    questions: [
+      ["Late payment fees", "Which supplier mentions late payment fees?"],
+      ["Cancelling", "What do our documents say about cancelling?"],
+    ],
+  },
 ];
-
-/** Questions answered from our own query over the records, or from what the documents say. */
-const ANYTHING = [
-  "How much did we spend on each category this year?",
-  "How many invoices did we send each month?",
-  "Which supplier mentions late payment fees?",
-  "What do our documents say about cancelling?",
-];
-
-type AssistantMessage = Extract<AskMessage, { role: "assistant" }>;
 
 function asMessages(question: string, reply: AskReply): AskMessage[] {
   const now = new Date().toISOString();
@@ -57,6 +75,8 @@ function asMessages(question: string, reply: AskReply): AskMessage[] {
     },
   ];
 }
+
+const turn = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.2 } };
 
 export default function AskPage() {
   const qc = useQueryClient();
@@ -106,92 +126,111 @@ export default function AskPage() {
   };
 
   const lastAnswerId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+  const empty = !threadId && messages.length === 0 && !pending;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[14rem_minmax(0,1fr)]">
-      <aside aria-label="Conversations" className="hidden lg:block">
-        <div className="sticky top-4">
-          <ThreadList current={threadId} onOpen={openThread} disabled={ask.isPending} />
-        </div>
-      </aside>
-
-      <div className="mx-auto flex min-h-[calc(100dvh-10rem)] w-full min-w-0 max-w-3xl flex-col gap-6">
-        <PageHeader
-          title="Ask"
-          description="Questions about your business, answered from your own records."
-          actions={
-            <>
-              {threadId && (
-                <Button variant="secondary" onClick={() => openThread(null)} disabled={ask.isPending}>
-                  <PlusIcon aria-hidden /> New conversation
-                </Button>
-              )}
-              <Button variant="ghost" className="lg:hidden" onClick={() => setHistoryOpen(true)}>
-                <HistoryIcon aria-hidden /> Earlier
+    <div className="flex min-h-[calc(100dvh-12rem)] w-full min-w-0 flex-col gap-6 md:min-h-[calc(100dvh-8.5rem)]">
+      <PageHeader
+        title="Ask"
+        actions={
+          <>
+            {!empty && (
+              <Button variant="secondary" onClick={() => openThread(null)} disabled={ask.isPending}>
+                <PlusIcon aria-hidden /> <span className="max-sm:sr-only">New conversation</span>
               </Button>
-            </>
-          }
-        />
+            )}
+            <Button variant="ghost" onClick={() => setHistoryOpen(true)} aria-haspopup="dialog">
+              <HistoryIcon aria-hidden /> <span className="max-sm:sr-only">History</span>
+            </Button>
+          </>
+        }
+      />
 
-        <div className="min-w-0 flex-1">
-          {threadId && thread.isPending ? (
-            <ListSkeleton rows={3} />
-          ) : threadId && thread.isError ? (
-            <ErrorState message={errorMessage(thread.error)} onRetry={() => void thread.refetch()} />
-          ) : messages.length === 0 && !pending ? (
-            <div className="grid gap-5">
-              <QuestionChips label="Try one of these" questions={STARTERS} onAsk={send} />
-              <QuestionChips label="Or ask anything about your records and documents" questions={ANYTHING} onAsk={send} />
-              <AskStatsLine />
-            </div>
-          ) : (
-            <ol className="grid gap-6" aria-label="Conversation">
-              <AnimatePresence initial={false}>
-                {messages.map((m) => (
-                  <motion.li key={m.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="grid min-w-0 gap-3">
-                    {m.role === "user" ? <Question text={m.text} /> : <Answer message={m} latest={m.id === lastAnswerId && !pending} onFollowUp={send} />}
-                  </motion.li>
-                ))}
-                {pending && (
-                  <motion.li key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="grid min-w-0 gap-3">
-                    <Question text={pending.question} />
-                    {pending.error ? (
-                      <ErrorState message={pending.error} onRetry={() => send(pending.question)} />
-                    ) : (
-                      <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2Icon className="size-4 animate-spin" aria-hidden /> Checking your records…
-                      </p>
-                    )}
-                  </motion.li>
-                )}
-              </AnimatePresence>
-            </ol>
-          )}
-          {/* Kept clear of the question box (and the phone menu) when scrolled to */}
-          <div ref={endRef} className="scroll-mb-44 md:scroll-mb-28" />
+      {empty ? (
+        <EmptyAsk draft={draft} setDraft={setDraft} onSend={send} pending={ask.isPending} />
+      ) : (
+        <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-1 flex-col gap-2">
+          <div className="min-w-0 flex-1">
+            {threadId && thread.isPending ? (
+              <ConversationSkeleton />
+            ) : threadId && thread.isError ? (
+              <ErrorState message={errorMessage(thread.error)} onRetry={() => void thread.refetch()} />
+            ) : (
+              <ol className="grid gap-8" aria-label="Conversation">
+                <AnimatePresence initial={false}>
+                  {messages.map((m) => (
+                    <motion.li key={m.id} {...turn} className="grid min-w-0">
+                      {m.role === "user" ? <Question text={m.text} /> : <Answer message={m} latest={m.id === lastAnswerId && !pending} onFollowUp={send} />}
+                    </motion.li>
+                  ))}
+                  {pending && (
+                    <motion.li key="pending" {...turn} className="grid min-w-0 gap-8">
+                      <Question text={pending.question} />
+                      {pending.error ? <ErrorState message={pending.error} onRetry={() => send(pending.question)} /> : <Thinking />}
+                    </motion.li>
+                  )}
+                </AnimatePresence>
+              </ol>
+            )}
+            {/* Kept clear of the question box (and the phone menu) when scrolled to */}
+            <div ref={endRef} className="scroll-mb-44 md:scroll-mb-28" />
+          </div>
+          {/* Stays at the bottom (above the phone menu), with the conversation fading out behind it */}
+          <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] -mx-2 bg-gradient-to-t from-background from-70% to-transparent px-2 pb-3 pt-6 md:bottom-0 md:pb-5">
+            <Composer value={draft} onChange={setDraft} onSend={() => send(draft)} pending={ask.isPending} />
+          </div>
         </div>
+      )}
 
-        <Composer value={draft} onChange={setDraft} onSend={() => send(draft)} pending={ask.isPending} />
-      </div>
-
-      <SidePanel open={historyOpen} onOpenChange={setHistoryOpen} title="Earlier conversations">
+      <SidePanel open={historyOpen} onOpenChange={setHistoryOpen} title="History">
         <ThreadList current={threadId} onOpen={openThread} disabled={ask.isPending} />
       </SidePanel>
     </div>
   );
 }
 
-function QuestionChips({ label, questions, onAsk }: { label: string; questions: string[]; onAsk: (q: string) => void }) {
+/** The first thing you see: one question box in the middle, a few examples under it. */
+function EmptyAsk({ draft, setDraft, onSend, pending }: { draft: string; setDraft: (v: string) => void; onSend: (q: string) => void; pending: boolean }) {
   return (
-    <div role="group" aria-label={label} className="grid gap-2">
-      <p className="text-sm text-muted-foreground">{label}:</p>
-      <div className="flex flex-wrap gap-2">
-        {questions.map((q) => (
-          <button key={q} type="button" onClick={() => onAsk(q)} className="rounded-full border bg-card px-3 py-1.5 text-left text-sm shadow-card hover:bg-accent">
-            {q}
-          </button>
-        ))}
+    <div className="flex flex-1 flex-col items-center justify-center gap-7 pb-[8vh]">
+      <div className="grid justify-items-center gap-3 text-center">
+        <IconTile icon={SparklesIcon} tone="accent" className="size-11 [&>svg]:size-5" />
+        <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">What would you like to know?</h2>
       </div>
+      <div className="w-full max-w-2xl">
+        <Composer variant="hero" value={draft} onChange={setDraft} onSend={() => onSend(draft)} pending={pending} />
+      </div>
+      <Tabs defaultValue={TOPICS[0]!.id} className="grid w-full max-w-2xl justify-items-center">
+        <TabsList aria-label="Example questions by topic" className="max-w-full">
+          {TOPICS.map((t) => {
+            const Icon = t.icon;
+            return (
+              <TabsTrigger key={t.id} value={t.id} className="px-2.5 sm:px-3">
+                <Icon className="hidden size-3.5 sm:block" aria-hidden />
+                {t.label}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        {TOPICS.map((t) => (
+          <TabsContent key={t.id} value={t.id}>
+            <div role="group" aria-label={`${t.label} questions`} className="flex flex-wrap justify-center gap-2">
+              {t.questions.map(([label, question]) => (
+                <button
+                  key={label}
+                  type="button"
+                  title={question}
+                  onClick={() => onSend(question)}
+                  className="rounded-full border bg-card px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-foreground/20 hover:bg-accent"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
+      <AskStatsLine />
     </div>
   );
 }
@@ -201,31 +240,44 @@ function AskStatsLine() {
   const stats = useAskStats().data;
   if (!stats || stats.answered_from_data === 0) return null;
   return (
-    <p className="text-xs text-muted-foreground">
-      So far we've answered {stats.answered_from_data} of your {stats.questions} questions from your records, and{" "}
-      {stats.checked_first_try} passed our fact check first time.
+    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <ShieldCheckIcon className="size-3.5 text-positive" aria-hidden />
+      {stats.answered_from_data} of {stats.questions} answered from your records, {stats.checked_first_try} passed our fact check first time
     </p>
   );
 }
 
-function Question({ text }: { text: string }) {
-  return <p className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">{text}</p>;
+function ConversationSkeleton() {
+  return (
+    <div className="grid gap-8" aria-busy="true" aria-label="Loading">
+      <Skeleton className="ml-auto h-10 w-2/5 rounded-2xl" />
+      <div className="grid gap-2.5 sm:pl-10">
+        <Skeleton className="h-3.5 w-4/5" />
+        <Skeleton className="h-3.5 w-3/5" />
+        <Skeleton className="mt-2 h-28 w-full rounded-xl" />
+      </div>
+    </div>
+  );
 }
 
 function ThreadList({ current, onOpen, disabled }: { current: string | null; onOpen: (id: string | null) => void; disabled: boolean }) {
   const threads = useAskThreads();
   const items = threads.data?.items ?? [];
   return (
-    <nav aria-label="Earlier conversations" className="grid gap-2">
-      <Button variant="secondary" size="sm" className="justify-start" onClick={() => onOpen(null)} disabled={disabled}>
+    <nav aria-label="Earlier conversations" className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      <Button variant="secondary" className="justify-start" onClick={() => onOpen(null)} disabled={disabled}>
         <PlusIcon aria-hidden /> New conversation
       </Button>
       {threads.isPending ? (
-        <ListSkeleton rows={3} />
+        <div className="grid gap-3 px-2.5 py-1" aria-hidden>
+          {[70, 55, 80].map((w) => (
+            <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />
+          ))}
+        </div>
       ) : items.length === 0 ? (
-        <p className="px-1 text-xs text-muted-foreground">Your conversations will be listed here. Only you can see them.</p>
+        <p className="px-1 text-sm text-muted-foreground">No conversations yet. Only you can see them.</p>
       ) : (
-        <ul className="grid gap-0.5">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {items.map((t) => (
             <li key={t.id}>
               <button
@@ -233,251 +285,18 @@ function ThreadList({ current, onOpen, disabled }: { current: string | null; onO
                 onClick={() => onOpen(t.id)}
                 disabled={disabled}
                 aria-current={t.id === current ? "true" : undefined}
-                className={cn("grid w-full rounded-lg px-2.5 py-2 text-left hover:bg-accent disabled:opacity-50", t.id === current && "bg-accent")}
+                className={cn(
+                  "flex w-full items-baseline gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent disabled:opacity-50",
+                  t.id === current && "bg-accent",
+                )}
               >
-                <span className="truncate text-sm">{t.title}</span>
-                <span className="text-xs text-muted-foreground">{formatRelative(t.created_at)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{formatRelative(t.created_at)}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
     </nav>
-  );
-}
-
-function Answer({ message: m, latest, onFollowUp }: { message: AssistantMessage; latest: boolean; onFollowUp: (q: string) => void }) {
-  const act = useAskAct();
-  const [action, setAction] = useState<Action | null>(null);
-  return (
-    <div className="grid min-w-0 max-w-full gap-4 rounded-2xl rounded-bl-md border bg-card p-4 shadow-card sm:max-w-[95%]">
-      <Worded wording={m.answer} />
-      {m.blocks.map((b, i) => (
-        <Block key={i} block={b} />
-      ))}
-      {m.sources.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">From:</span>
-          {m.sources.map((s) =>
-            s.href ? (
-              <Link key={s.id} to={s.href} className="rounded-md border px-2 py-0.5 hover:bg-accent">
-                {s.label}
-              </Link>
-            ) : (
-              <span key={s.id} className="rounded-md border px-2 py-0.5">
-                {s.label}
-              </span>
-            ),
-          )}
-        </div>
-      )}
-      {action ? (
-        <ActionConfirmation confirmation={action} />
-      ) : (
-        m.suggestion && (
-          <div>
-            <Button
-              variant="secondary"
-              disabled={act.isPending}
-              onClick={() => act.mutate(m.id, { onSuccess: (r) => setAction(r.action), onError: (err) => toast.error(errorMessage(err)) })}
-            >
-              {act.isPending ? <Loader2Icon className="animate-spin" aria-hidden /> : <MailIcon aria-hidden />}
-              {m.suggestion.label}
-            </Button>
-            <p className="mt-1.5 text-xs text-muted-foreground">We draft it for you to check. Nothing is sent until someone approves it.</p>
-          </div>
-        )
-      )}
-      {latest && m.follow_ups.length > 0 && (
-        <div className="flex flex-wrap gap-2" aria-label="Follow-up questions">
-          {m.follow_ups.map((f) => (
-            <button key={f} type="button" onClick={() => onFollowUp(f)} className="rounded-full border px-3 py-1 text-left text-sm hover:bg-accent">
-              {f}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Block({ block }: { block: AskBlock }) {
-  const currency = useCurrentUser().business.currency;
-  if (block.type === "chart") {
-    return (
-      <ChartCard
-        title={block.title}
-        summary={`${block.title}, week by week, with the safety level.`}
-        className="shadow-none"
-        table={{
-          columns: [
-            { key: "date", label: "Week of" },
-            { key: "expected", label: "Expected", numeric: true },
-            { key: "range", label: "Worst to best", numeric: true },
-          ],
-          rows: block.points.map((p) => ({
-            id: p.date,
-            date: formatDate(p.date, true),
-            expected: <Money minor={p.expected_minor} currency={currency} />,
-            range: (
-              <>
-                <Money minor={p.worst_minor} currency={currency} /> – <Money minor={p.best_minor} currency={currency} />
-              </>
-            ),
-          })),
-        }}
-      >
-        <CashAreaChart series={block.points} currency={currency} height={180} safetyLevelMinor={block.safety_level_minor} />
-      </ChartCard>
-    );
-  }
-  if (block.type === "passages") return <Passages block={block} />;
-  if (block.rows.length === 0) return null;
-  return (
-    <figure aria-label={block.title} className="grid min-w-0 gap-2">
-      <figcaption className="text-sm font-medium">{block.title}</figcaption>
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-              {block.columns.map((c, i) => (
-                <th key={c} scope="col" className={cn("px-3 py-2 font-medium", block.money_columns.includes(i) && "text-right")}>
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {block.rows.map((row, r) => (
-              <tr key={r} className="border-b last:border-0">
-                {row.map((cell, i) =>
-                  block.money_columns.includes(i) && typeof cell === "number" ? (
-                    <td key={i} className="whitespace-nowrap px-3 py-2 text-right tabular">
-                      <Money minor={cell} currency={currency} />
-                    </td>
-                  ) : i === 0 ? (
-                    <th key={i} scope="row" className="px-3 py-2 text-left font-normal">
-                      {cell ?? "–"}
-                    </th>
-                  ) : (
-                    <td key={i} className="px-3 py-2">
-                      {cell ?? "–"}
-                    </td>
-                  ),
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </figure>
-  );
-}
-
-const HIDDEN = /(\[hidden [a-z ]+\])/;
-
-/** Passages found in the documents, each linked to its document. Personal details stay hidden here too. */
-function Passages({ block }: { block: AskPassagesBlock }) {
-  if (block.items.length === 0) return null;
-  return (
-    <figure aria-label={block.title} className="grid min-w-0 gap-2">
-      <figcaption className="text-sm font-medium">{block.title}</figcaption>
-      <ul className="grid gap-2">
-        {block.items.map((p) => (
-          <li key={p.document_id} className="grid gap-2 rounded-lg border p-3">
-            <blockquote className="break-words text-sm">
-              {p.text.split(HIDDEN).map((part, i) =>
-                i % 2 === 1 ? (
-                  <span key={i} className="rounded bg-muted px-1 text-xs text-muted-foreground">
-                    {part.slice(1, -1)}
-                  </span>
-                ) : (
-                  part
-                ),
-              )}
-            </blockquote>
-            <Link to={p.href} className="inline-flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline">
-              <FileTextIcon className="size-3.5" aria-hidden />
-              {p.label}, {p.kind} received {formatDate(p.date, true)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-      <p className="text-xs text-muted-foreground">We search the text the AI was shown when we read each document, so personal and bank details stay hidden.</p>
-    </figure>
-  );
-}
-
-type SpeechRecognitionLike = {
-  lang: string;
-  interimResults: boolean;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-
-function speechRecognition(): (new () => SpeechRecognitionLike) | null {
-  const w = window as unknown as Record<string, unknown>;
-  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as (new () => SpeechRecognitionLike) | null;
-}
-
-function Composer({ value, onChange, onSend, pending }: { value: string; onChange: (v: string) => void; onSend: () => void; pending: boolean }) {
-  const [listening, setListening] = useState(false);
-  const recRef = useRef<SpeechRecognitionLike | null>(null);
-  const Speech = speechRecognition();
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    onSend();
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      onSend();
-    }
-  };
-  const toggleVoice = () => {
-    if (!Speech) return;
-    if (listening) {
-      recRef.current?.stop();
-      return;
-    }
-    const rec = new Speech();
-    rec.lang = "en-GB";
-    rec.interimResults = false;
-    rec.onresult = (e) => onChange(Array.from(e.results, (r) => r[0]?.transcript ?? "").join(" "));
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
-    recRef.current = rec;
-    setListening(true);
-    rec.start();
-  };
-
-  return (
-    <form onSubmit={onSubmit} className="sticky bottom-20 flex items-end gap-2 rounded-2xl border bg-card p-2 shadow-panel md:bottom-4">
-      <label htmlFor="ask-input" className="sr-only">
-        Ask a question
-      </label>
-      <Textarea
-        id="ask-input"
-        rows={1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Ask about your business…"
-        className="max-h-40 min-h-10 flex-1 border-0 shadow-none focus-visible:outline-none"
-        maxLength={1000}
-      />
-      {Speech && (
-        <Button type="button" variant="ghost" size="icon" onClick={toggleVoice} aria-pressed={listening} aria-label={listening ? "Stop listening" : "Ask by voice"}>
-          <MicIcon className={cn(listening && "text-danger")} aria-hidden />
-        </Button>
-      )}
-      <Button type="submit" size="icon" disabled={!value.trim() || pending} aria-label="Send question">
-        {pending ? <Loader2Icon className="animate-spin" aria-hidden /> : <ArrowUpIcon aria-hidden />}
-      </Button>
-    </form>
   );
 }

@@ -9,7 +9,7 @@ import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
 /** Scan on the computer, photograph a receipt on the phone, watch it arrive here. */
-export function PhoneHandoff({ variant = "secondary" }: { variant?: "secondary" | "default" }) {
+export function PhoneHandoff({ variant = "secondary", className }: { variant?: "secondary" | "default"; className?: string }) {
   const [open, setOpen] = useState(false);
   const handoff = useCreateHandoff();
 
@@ -20,14 +20,14 @@ export function PhoneHandoff({ variant = "secondary" }: { variant?: "secondary" 
 
   return (
     <>
-      <Button variant={variant} onClick={start}>
+      <Button variant={variant} onClick={start} className={className}>
         <SmartphoneIcon aria-hidden /> Use your phone
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Photograph a receipt with your phone</DialogTitle>
-            <DialogDescription>Scan this code with your phone's camera. Photos you take there arrive here in seconds.</DialogDescription>
+            <DialogTitle>Use your phone</DialogTitle>
+            <DialogDescription>Scan with your phone's camera. Photos you take there arrive here in seconds.</DialogDescription>
           </DialogHeader>
           {handoff.isPending ? (
             <div className="flex h-56 items-center justify-center">

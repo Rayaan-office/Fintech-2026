@@ -53,21 +53,29 @@ function setup({ reply = searchReply, stats = null }: { reply?: AskReply; stats?
 
 const bodyOf = (init: RequestInit | undefined) => JSON.parse(String(init?.body ?? "null"));
 
+async function askExample(topic: string, chip: string) {
+  await userEvent.click(await screen.findByRole("tab", { name: topic }));
+  await userEvent.click(await screen.findByRole("button", { name: chip }));
+}
+
 describe("Ask anything", () => {
-  it("offers example questions about records and documents", async () => {
+  it("offers short example questions by topic, and sends the full question", async () => {
     const { calls } = setup();
-    const chips = within(await screen.findByRole("group", { name: "Or ask anything about your records and documents" }));
-    expect(chips.getByRole("button", { name: "How much did we spend on each category this year?" })).toBeInTheDocument();
-    await userEvent.click(chips.getByRole("button", { name: "Which supplier mentions late payment fees?" }));
+    // Cash is the first topic; the others are a tab away
+    expect(within(await screen.findByRole("group", { name: "Cash questions" })).getByRole("button", { name: "Cash next month" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Suppliers" }));
+    expect(within(await screen.findByRole("group", { name: "Suppliers questions" })).getByRole("button", { name: "Spend by category" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Documents" }));
+    await userEvent.click(within(await screen.findByRole("group", { name: "Documents questions" })).getByRole("button", { name: "Late payment fees" }));
     expect(await screen.findByText(/charges a late payment fee/)).toBeInTheDocument();
     expect(bodyOf(calls.find((c) => c.path === "/api/ask")!.init)).toEqual({ question: "Which supplier mentions late payment fees?" });
     // The examples give way to the conversation
-    expect(screen.queryByRole("group", { name: "Try one of these" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Documents" })).not.toBeInTheDocument();
   });
 
   it("shows passages from the documents, linked to each document, with details still hidden", async () => {
     setup();
-    await userEvent.click(await screen.findByRole("button", { name: "Which supplier mentions late payment fees?" }));
+    await askExample("Documents", "Late payment fees");
     const passages = within(await screen.findByRole("figure", { name: "From your documents" }));
     const item = passages.getByRole("listitem");
     expect(item).toHaveTextContent("A late payment fee of £40.00 applies after 30 days.");
@@ -80,19 +88,19 @@ describe("Ask anything", () => {
 
   it("shows grouped totals in the usual table", async () => {
     setup({ reply: byMonthReply });
-    await userEvent.click(await screen.findByRole("button", { name: "How much did we spend on each category this year?" }));
+    await askExample("Suppliers", "Spend by category");
     const table = within(await screen.findByRole("figure", { name: "Bills by month, 1 Jan 2026 to 18 Oct 2026" }));
     expect(table.getByRole("row", { name: /March 2026/ })).toHaveTextContent("March 2026£2,400.004£600.00");
   });
 
   it("says how questions were answered so far", async () => {
     setup({ stats: { questions: 14, answered_from_data: 12, checked_first_try: 11, first_try_pct: 91.7, by_tool: {} } });
-    expect(await screen.findByText(/answered 12 of your 14 questions from your records, and 11 passed our fact check first time/)).toBeInTheDocument();
+    expect(await screen.findByText(/12 of 14 answered from your records, 11 passed our fact check first time/)).toBeInTheDocument();
   });
 
   it("says nothing about answers before there are any", async () => {
     setup({ stats: { questions: 0, answered_from_data: 0, checked_first_try: 0, first_try_pct: null, by_tool: {} } });
-    await screen.findByRole("group", { name: "Try one of these" });
-    expect(screen.queryByText(/So far we've answered/)).not.toBeInTheDocument();
+    await screen.findByRole("group", { name: "Cash questions" });
+    expect(screen.queryByText(/answered from your records/)).not.toBeInTheDocument();
   });
 });

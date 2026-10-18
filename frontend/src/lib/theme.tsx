@@ -2,14 +2,15 @@ import { createContext, use, useEffect, useMemo, useState, type ReactNode } from
 import { readSetting, writeSetting } from "./storage";
 
 export type ThemeChoice = "system" | "light" | "dark";
+// Light unless someone picks dark (or "follow my device") themselves
 const KEY = "copilot.theme";
 
 type ThemeContextValue = { theme: ThemeChoice; setTheme: (t: ThemeChoice) => void };
-const ThemeContext = createContext<ThemeContextValue>({ theme: "system", setTheme: () => {} });
+const ThemeContext = createContext<ThemeContextValue>({ theme: "light", setTheme: () => {} });
 
 function stored(): ThemeChoice {
   const v = readSetting(KEY);
-  return v === "light" || v === "dark" ? v : "system";
+  return v === "dark" || v === "system" ? v : "light";
 }
 
 export function applyTheme(choice: ThemeChoice = stored()): void {

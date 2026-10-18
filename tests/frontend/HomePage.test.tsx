@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CashPosition, HomeSummary, Me, Recommendation } from "@/api/types";
@@ -22,7 +22,7 @@ function setup({
   return { ...api, ...renderApp("/") };
 }
 
-const briefing = async () => within((await screen.findByRole("heading", { name: "Today" })).closest("section")!);
+const briefing = async () => within((await screen.findByRole("heading", { name: /^Today/ })).closest("section")!);
 
 describe("Home", () => {
   it("greets the person and has the quick buttons", async () => {
@@ -51,8 +51,8 @@ describe("Home", () => {
     }));
     setup({ home: homeSummary({ today: many }) });
     const today = await briefing();
-    expect(today.getAllByRole("listitem")).toHaveLength(4);
-    await userEvent.click(today.getByRole("button", { name: "Show 2 more" }));
+    expect(today.getAllByRole("listitem")).toHaveLength(3);
+    await userEvent.click(today.getByRole("button", { name: "Show 3 more" }));
     expect(today.getAllByRole("listitem")).toHaveLength(6);
   });
 
@@ -61,45 +61,58 @@ describe("Home", () => {
     expect((await briefing()).getByText("Nothing needs you today.")).toBeInTheDocument();
   });
 
-  it("shows cash today across the accounts, with the next 30 days and the lowest point", async () => {
+  it("shows cash today across the accounts, with the next 30 days", async () => {
     setup({ cash: cashPosition({ left_out: [{ id: "acc3", name: "Euro account", source: "plaid", mask: "9087", currency: "EUR", balance_minor: 50000, counted: false }] }) });
-    const headline = (await screen.findByText("Cash today")).parentElement!;
-    expect(headline).toHaveTextContent("£15,000.00");
-    expect(await within(headline).findByText(/Across 2 accounts · updated 2 hours ago/)).toBeInTheDocument();
-    expect(headline).toHaveTextContent("Not counted (another currency): Euro account (EUR)");
+    const region = await screen.findByRole("region", { name: "Cash today" });
+    const tile = within(region);
+    await waitFor(() => expect(region).toHaveTextContent("£15,000.00"));
+    expect(await tile.findByText("2 accounts")).toBeInTheDocument();
+    expect(tile.getByText("Updated 2 hours ago")).toBeInTheDocument();
+    // Accounts in another currency are left out of the total, and the tile says which on hover or focus
+    expect(tile.getByText("1 not counted")).toBeInTheDocument();
+    expect(tile.getByLabelText("Not counted (another currency): Euro account (EUR)")).toBeInTheDocument();
 
     // Regression: the card said "Next 90 days" over the 31 days the home endpoint sends
-    const chart = screen.getByRole("heading", { name: "Next 30 days" }).closest("section")!;
-    expect(screen.queryByRole("heading", { name: "Next 90 days" })).not.toBeInTheDocument();
-    expect(chart).toHaveTextContent(/In 30 days£10,003\.33/);
-    expect(chart).toHaveTextContent(/Lowest in 90 days.*£7,505\.00 on 2 Dec/);
-    expect(within(chart).getByRole("link", { name: /View cash flow/ })).toHaveAttribute("href", "/cash-flow");
-    await userEvent.click(within(chart).getByRole("button", { name: "Table" }));
-    expect(within(chart).getAllByRole("row")).toHaveLength(32);
+    expect(tile.getByText("Next 30 days")).toBeInTheDocument();
+    expect(screen.queryByText("Next 90 days")).not.toBeInTheDocument();
+    expect(tile.getByText(/In 30 days/).closest("span")).toHaveTextContent("In 30 days £10,003.33");
+    expect(tile.getByRole("link", { name: /View cash flow/ })).toHaveAttribute("href", "/cash-flow");
+    await userEvent.click(tile.getByRole("button", { name: "Table" }));
+    expect(tile.getAllByRole("row")).toHaveLength(32);
   });
 
-  it("shows the three cards: bills due, who owes you and the top recommendation", async () => {
+  it("shows the side tiles: bills due, who owes you and the top recommendation", async () => {
     setup();
-    const bills = (await screen.findByText("Bills due this week")).closest("div.flex-col")!;
-    expect(bills).toHaveTextContent("£1,078.56");
-    expect(bills).toHaveTextContent("2 bills due in the next 7 days");
+    const billsTile = await screen.findByRole("group", { name: "Bills due" });
+    const bills = within(billsTile);
+    expect(billsTile).toHaveTextContent("£1,078.56next 7 days");
+    expect(bills.getByText("2 bills")).toBeInTheDocument();
+    expect(bills.getByRole("link", { name: "See them in cash flow" })).toHaveAttribute("href", "/cash-flow");
 
-    const owed = screen.getByText("Who owes you").closest("div.flex-col")!;
+    const owed = screen.getByRole("group", { name: "Who owes you" });
     expect(owed).toHaveTextContent("£2,520.00");
     expect(owed).toHaveTextContent("£860.00 overdue");
-    expect(within(owed as HTMLElement).getByRole("link", { name: /See who owes you/ })).toHaveAttribute("href", "/health?view=owed");
+    expect(owed).toHaveTextContent("3 invoices");
+    expect(within(owed).getByRole("meter", { name: "Overdue share of what customers owe" })).toHaveAttribute("aria-valuenow", "86000");
+    expect(within(owed).getByRole("link", { name: "See who owes you" })).toHaveAttribute("href", "/health?view=owed");
 
-    const recs = screen.getByText("Recommendations", { selector: "div" }).closest("div.flex-col")!;
-    // The urgent one first
-    expect(await within(recs as HTMLElement).findByText("Northern Packaging's bank details changed")).toBeInTheDocument();
-    expect(recs).toHaveTextContent("£1,476.00 at stake");
-    expect(within(recs as HTMLElement).getByRole("link", { name: /See recommendations/ })).toHaveAttribute("href", "/recommendations?open=r2");
+    const recs = within(screen.getByRole("group", { name: "Recommendations" }));
+    // The urgent one first, one click from opening it
+    expect(await recs.findByRole("link", { name: /Northern Packaging's bank details changed/ })).toHaveAttribute("href", "/recommendations?open=r2");
+    expect(recs.getByText(/at stake/)).toHaveTextContent("£1,476.00 at stake");
+    expect(recs.getByRole("link", { name: "See recommendations" })).toHaveAttribute("href", "/recommendations");
   });
 
-  it("says when the next bill is, when nothing is due this week", async () => {
+  it("flags an overdue bill, and says when the next bill is when nothing is due this week", async () => {
+    const { unmount } = setup({ home: homeSummary({ bills_due: { count: 1, total_minor: 24000, next_due_date: "2026-01-14" } }) });
+    expect(await within(await screen.findByRole("group", { name: "Bills due" })).findByText("Oldest due 14 Jan")).toBeInTheDocument();
+    unmount();
+
     setup({ home: homeSummary({ bills_due: { count: 0, total_minor: 0, next_due_date: "2026-11-01" }, who_owes_you: { count: 2, total_minor: 166000, overdue_minor: 0 } }) });
-    expect(await screen.findByText("Nothing due in the next 7 days · next on 1 Nov")).toBeInTheDocument();
-    expect(screen.getByText("2 unpaid invoices, none overdue")).toBeInTheDocument();
+    expect(await screen.findByText("Next on 1 Nov")).toBeInTheDocument();
+    const owed = screen.getByRole("group", { name: "Who owes you" });
+    expect(owed).toHaveTextContent("None overdue");
+    expect(owed).toHaveTextContent("2 invoices");
   });
 
   it("starts with connecting a source when nothing is connected yet", async () => {

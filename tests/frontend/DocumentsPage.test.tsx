@@ -41,9 +41,13 @@ describe("Documents", () => {
     expect(within(table).getByText("Acme Supplies")).toBeInTheDocument();
     expect(within(table).getByText("Needs a check")).toBeInTheDocument();
     expect(within(table).getByText("Hiding personal details")).toBeInTheDocument();
-    expect(within(table).getByText("Duplicate invoice")).toBeInTheDocument();
+    // Warnings are one small count; their names are in its tip and read out to screen readers
+    expect(within(table).getByText(/Duplicate invoice/)).toBeInTheDocument();
+    // The file name stays in the row (and so in its name), but the party leads
+    expect(within(table).getByRole("row", { name: /acme-AS-1005\.pdf/ })).toHaveTextContent("Acme Supplies");
 
-    await userEvent.click(screen.getByRole("tab", { name: "Reading" }));
+    expect(screen.getByRole("radio", { name: /Reading/ })).toHaveTextContent("1");
+    await userEvent.click(screen.getByRole("radio", { name: /Reading/ }));
     expect(within(table).queryByText("Acme Supplies")).not.toBeInTheDocument();
     expect(within(table).getByText("receipt.jpg")).toBeInTheDocument();
   });

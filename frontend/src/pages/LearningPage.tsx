@@ -1,10 +1,12 @@
-import { BrainCircuitIcon, Building2Icon, LightbulbIcon, Loader2Icon, RotateCcwIcon, ShieldCheckIcon } from "lucide-react";
+import { BrainCircuitIcon, Building2Icon, LightbulbIcon, Loader2Icon, RotateCcwIcon, ShieldCheckIcon, XIcon, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { errorMessage } from "@/api/client";
 import { useLearning, useResetLearning } from "@/api/hooks";
 import type { LearningReset, LearningSummary } from "@/api/types";
-import { Headline, PageHeader, SummaryCard } from "@/components/PageHeader";
+import { Initials } from "@/components/Initials";
+import { InfoPopover, Section, StatStrip } from "@/components/kit";
+import { PageHeader } from "@/components/PageHeader";
 import { QueryView } from "@/components/QueryView";
 import { CardsSkeleton } from "@/components/skeletons";
 import { EmptyState } from "@/components/states";
@@ -12,11 +14,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPercent } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export default function LearningPage() {
   const learning = useLearning();
   return (
-    <div className="grid grid-cols-1 gap-6">
+    <div className="grid grid-cols-1 gap-8">
       <QueryView
         query={learning}
         loading={<CardsSkeleton count={3} />}
@@ -41,108 +44,157 @@ function Learned({ data }: { data: LearningSummary }) {
     <>
       <PageHeader
         title="What we've learned"
-        description={`We learn from your corrections and decisions. It all stays in our records and is never sent to the AI. We never learn ${data.never_learned.join(", ")}.`}
         actions={data.can_reset && !nothing ? <ResetButton what={{ scope: "all" }} label="Reset everything" confirm="Forget everything we've learned?" /> : undefined}
       />
 
-      <Headline
-        label="Time saved by values we filled in"
-        value={timeSaved(n.minutes_saved)}
-        note={`${n.fields_kept} ${n.fields_kept === 1 ? "value" : "values"} filled in from your past corrections and kept. ${data.assumptions.join(" ")}`}
+      <StatStrip
+        items={[
+          {
+            label: (
+              <span className="inline-flex items-center gap-0.5">
+                Time saved
+                <InfoPopover label="How we count time saved" title="How we count it" className="-my-1 size-5">
+                  <p>
+                    {n.fields_kept} {n.fields_kept === 1 ? "value" : "values"} filled in from your past corrections and kept. {data.assumptions.join(" ")}
+                  </p>
+                </InfoPopover>
+              </span>
+            ),
+            value: timeSaved(n.minutes_saved),
+            note: `${n.documents_helped} ${n.documents_helped === 1 ? "document" : "documents"} helped`,
+          },
+          { label: "Filled in for you", value: n.fields_filled, note: n.fields_undone ? `${n.fields_undone} undone` : "None undone" },
+          {
+            label: "Top suggestion acted on",
+            value: n.top_acted_share === null ? "–" : formatPercent(n.top_acted_share * 100),
+            note: n.top_decisions ? `${n.top_acted_on} of ${n.top_decisions} times it was first in the list` : "No decisions yet",
+          },
+          {
+            label: "Suggestions acted on",
+            value: n.acted_share === null ? "–" : formatPercent(n.acted_share * 100),
+            note: n.decisions ? `${n.acted_on} of ${n.decisions} decisions` : "No decisions yet",
+          },
+        ]}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <SummaryCard label="Filled in for you" value={n.fields_filled} note={n.fields_undone ? `${n.fields_undone} undone by a person` : "None undone so far"} />
-        <SummaryCard
-          label="Top recommendation acted on"
-          value={n.top_acted_share === null ? "–" : formatPercent(n.top_acted_share * 100)}
-          note={n.top_decisions ? `${n.top_acted_on} of ${n.top_decisions} times it was first in the list` : "No decisions yet"}
-        />
-        <SummaryCard
-          label="Recommendations acted on"
-          value={n.acted_share === null ? "–" : formatPercent(n.acted_share * 100)}
-          note={n.decisions ? `${n.acted_on} of ${n.decisions} decisions` : "No decisions yet"}
-        />
-      </div>
-
-      <section aria-labelledby="learned-corrections" className="grid gap-3">
-        <h2 id="learned-corrections" className="text-[15px] font-semibold">
-          From your corrections
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          After the same correction on {data.rules.learn_after} approved documents from one supplier, we fill it in ourselves next time and show it beside the field with Undo. A different correction stops it.
-        </p>
+      <Section
+        className="grid-cols-1"
+        title="From your corrections"
+        aside={data.suppliers.length > 0 ? data.suppliers.length : undefined}
+        actions={
+          <InfoPopover label="How we learn from corrections" title="Learning from corrections">
+            <p>
+              After the same correction on {data.rules.learn_after} approved documents from one supplier, we fill it in ourselves next time and mark it beside the field, with Undo. A different correction stops it.
+            </p>
+          </InfoPopover>
+        }
+      >
         {data.suppliers.length === 0 ? (
-          <EmptyState icon={Building2Icon} title="No corrections learned yet" description={`Correct the same thing on ${data.rules.learn_after} approved bills from one supplier and we'll remember it.`} />
+          <QuietEmpty icon={Building2Icon} title="No corrections learned yet" note={`Correct the same thing on ${data.rules.learn_after} approved bills from one supplier and we'll remember it.`} />
         ) : (
-          <ul className="grid gap-3">
+          <ul className="divide-y rounded-xl border bg-card">
             {data.suppliers.map((s) => (
-              <li key={s.counterparty_id} aria-label={s.name} className="rounded-xl border bg-card shadow-card">
-                <div className="flex flex-wrap items-center gap-2 border-b py-2 pr-2 pl-4">
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{s.name}</span>
-                  <Badge variant="outline">{s.kind === "customer" ? "Customer" : "Supplier"}</Badge>
-                  {data.can_reset && <ResetButton what={{ scope: "supplier", counterparty_id: s.counterparty_id }} label="Forget all" confirm={`Forget everything we learned about ${s.name}?`} />}
-                </div>
-                <ul className="divide-y">
+              <li key={s.counterparty_id} aria-label={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
+                <span className="flex min-w-0 items-center gap-3 sm:w-56 sm:shrink-0">
+                  <Initials name={s.name} />
+                  <span className="grid min-w-0">
+                    <span className="truncate text-sm font-medium">{s.name}</span>
+                    <span className="text-xs text-muted-foreground">{s.kind === "customer" ? "Customer" : "Supplier"}</span>
+                  </span>
+                </span>
+                <ul aria-label={`Learned for ${s.name}`} className="flex min-w-0 flex-1 flex-wrap gap-1.5">
                   {s.items.map((i) => (
-                    <li key={i.field} className="flex flex-wrap items-center gap-3 px-4 py-2.5 text-sm">
-                      <span className="w-32 shrink-0 text-muted-foreground">{i.label}</span>
-                      <span className="min-w-0 flex-1 basis-48">{i.sentence}</span>
-                      {data.can_reset && <ResetButton what={{ scope: "field", counterparty_id: s.counterparty_id, field: i.field }} label="Forget" />}
+                    <li key={i.field} title={i.sentence} className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border bg-background text-xs", data.can_reset ? "pr-0.5 pl-2.5" : "px-2.5")}>
+                      <span aria-hidden>
+                        <span className="text-muted-foreground">{i.label}</span> <span className="font-medium">{i.value_label}</span>
+                        <span className="ml-1.5 text-muted-foreground tabular">×{i.corrections}</span>
+                      </span>
+                      <span className="sr-only">{i.sentence}</span>
+                      {data.can_reset && <ResetButton what={{ scope: "field", counterparty_id: s.counterparty_id, field: i.field }} label={`Forget ${i.label}`} iconOnly />}
                     </li>
                   ))}
                 </ul>
+                {data.can_reset && <ResetButton what={{ scope: "supplier", counterparty_id: s.counterparty_id }} label="Forget all" confirm={`Forget everything we learned about ${s.name}?`} />}
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Section>
 
-      <section aria-labelledby="learned-recommendations" className="grid gap-3">
-        <h2 id="learned-recommendations" className="text-[15px] font-semibold">
-          From your decisions on recommendations
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          We show the kinds you act on higher, within the same level of importance. A minor kind you act on less than {formatPercent(data.rules.fold_below * 100)} of the time, after {data.rules.fold_after} decisions, is folded under "Less useful to you". Urgent items and changed bank details always stay at the top.
-        </p>
+      <Section
+        className="grid-cols-1"
+        title="From your decisions"
+        aside={data.recommendations.length > 0 ? data.recommendations.length : undefined}
+        actions={
+          <InfoPopover label="How we learn from decisions" title="Learning from decisions">
+            <p>We show the kinds of suggestion you act on higher, within the same level of importance.</p>
+            <p>
+              A minor kind you act on less than {formatPercent(data.rules.fold_below * 100)} of the time, after {data.rules.fold_after} decisions, is folded under "Less useful to you". Urgent items and changed bank details always stay at the top.
+            </p>
+          </InfoPopover>
+        }
+      >
         {data.recommendations.length === 0 ? (
-          <EmptyState icon={LightbulbIcon} title="No decisions yet" description="Act on or dismiss a recommendation and we'll learn which kinds are useful to you." />
+          <QuietEmpty icon={LightbulbIcon} title="No decisions yet" note="Act on or dismiss a recommendation and we'll learn which kinds are useful to you." />
         ) : (
-          <ul className="divide-y rounded-xl border bg-card shadow-card">
+          <ul className="divide-y rounded-xl border bg-card">
             {data.recommendations.map((k) => (
-              <li key={k.kind} aria-label={k.label} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-                <span className="w-44 shrink-0 font-medium">{k.label}</span>
-                <span className="min-w-0 flex-1 basis-48 text-muted-foreground">{k.sentence}</span>
-                <ShareBar share={k.acted_share} label={`Acted on ${formatPercent(k.acted_share * 100)}`} />
-                {k.less_useful && <Badge variant="neutral">Less useful to you</Badge>}
-                {data.can_reset && <ResetButton what={{ scope: "kind", kind: k.kind }} label="Reset" />}
+              <li key={k.kind} aria-label={k.label} title={k.sentence} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 text-sm sm:grid-cols-[14rem_minmax(0,1fr)_auto] sm:px-5">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{k.label}</span>
+                  {k.less_useful && <Badge variant="neutral">Less useful to you</Badge>}
+                </span>
+                <WinsBar acted={k.acted_on} declined={k.turned_down} share={k.acted_share} />
+                <span className="col-start-2 row-start-1 flex items-center justify-end sm:col-start-auto sm:row-start-auto">
+                  <span className="sr-only">{k.sentence}</span>
+                  {data.can_reset && <ResetButton what={{ scope: "kind", kind: k.kind }} label={`Reset ${k.label}`} iconOnly />}
+                </span>
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Section>
 
       <p className="flex items-start gap-2 text-xs text-muted-foreground">
         <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Learning never approves anything by itself. Values we fill in still go through the usual checks and approvals, and only a business owner can reset what we've learned.
+        We never learn {data.never_learned.join(", ")}. Learning never approves anything by itself.
       </p>
     </>
   );
 }
 
-function ShareBar({ share, label }: { share: number; label: string }) {
+/** Nothing here yet, said in one quiet line. */
+function QuietEmpty({ icon: Icon, title, note }: { icon: LucideIcon; title: string; note: string }) {
   return (
-    <span className="flex w-28 shrink-0 items-center gap-2" title={label}>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="img" aria-label={label}>
-        <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.round(share * 100)}%` }} />
+    <div className="flex items-center gap-3 rounded-xl border border-dashed px-4 py-3 text-sm">
+      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0">
+        <span className="font-medium">{title}</span>
+        <span className="block text-xs text-muted-foreground">{note}</span>
       </span>
-      <span className="w-9 text-right text-xs tabular text-muted-foreground">{formatPercent(share * 100)}</span>
+    </div>
+  );
+}
+
+/** Acted on against turned down, as one bar: the green part is how often it was useful. */
+function WinsBar({ acted, declined, share }: { acted: number; declined: number; share: number }) {
+  const total = acted + declined;
+  const label = `Acted on ${formatPercent(share * 100)}`;
+  return (
+    <span className="col-span-2 flex w-full max-w-md min-w-0 items-center gap-3 sm:col-span-1">
+      <span className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted" role="img" aria-label={label}>
+        <span className="h-full bg-positive" style={{ width: `${total ? (acted / total) * 100 : 0}%` }} />
+        <span className="h-full bg-muted-foreground/25" style={{ width: `${total ? (declined / total) * 100 : 0}%` }} />
+      </span>
+      <span className="w-16 shrink-0 text-right text-xs text-muted-foreground tabular" aria-hidden>
+        <span className="font-medium text-foreground">{acted}</span> of {total}
+      </span>
     </span>
   );
 }
 
 /** A reset, asking first when it forgets more than one thing. */
-function ResetButton({ what, label, confirm }: { what: LearningReset; label: string; confirm?: string }) {
+function ResetButton({ what, label, confirm, iconOnly = false }: { what: LearningReset; label: string; confirm?: string; iconOnly?: boolean }) {
   const reset = useResetLearning();
   const [asking, setAsking] = useState(false);
   const go = () =>
@@ -153,7 +205,11 @@ function ResetButton({ what, label, confirm }: { what: LearningReset; label: str
       },
       onError: (err) => toast.error(errorMessage(err)),
     });
-  const button = (
+  const button = iconOnly ? (
+    <Button variant="ghost" size="icon-sm" className="size-6 text-muted-foreground" disabled={reset.isPending} onClick={confirm ? () => setAsking(true) : go} aria-label={label} title={label}>
+      {reset.isPending ? <Loader2Icon className="size-3.5 animate-spin" aria-hidden /> : <XIcon className="size-3.5" aria-hidden />}
+    </Button>
+  ) : (
     <Button variant="ghost" size="sm" disabled={reset.isPending} onClick={confirm ? () => setAsking(true) : go}>
       {reset.isPending ? <Loader2Icon className="animate-spin" aria-hidden /> : <RotateCcwIcon aria-hidden />} {label}
     </Button>
