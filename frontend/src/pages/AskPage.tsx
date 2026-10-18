@@ -32,7 +32,7 @@ const STARTERS = [
 
 /** Questions answered from our own query over the records, or from what the documents say. */
 const ANYTHING = [
-  "How much did we spend by category each month this year?",
+  "How much did we spend on each category this year?",
   "How many invoices did we send each month?",
   "Which supplier mentions late payment fees?",
   "What do our documents say about cancelling?",

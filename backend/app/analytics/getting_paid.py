@@ -179,7 +179,8 @@ def payment_costs(db: Session, today: date) -> list[Finding]:
         saving = sum(x.short_minor for x in xs) - fee
         left = short_open.get(cid, [])
         left_minor = sum(r.open_minor for r in left)
-        facts = {"customer": name, "payments in the last 180 days": len(mine),
+        facts = {"customer": name, "who pays whom": f"{name} pays you for invoices you sent them",
+                 "payments in the last 180 days": len(mine),
                  "paid by": ", ".join(f"{methods.LABELS[m].lower()} ({len(v)})" for m, v in by.items()),
                  f"average days from invoice to payment by {how}": f"{main_days:.0f}"}
         if short:
@@ -268,6 +269,10 @@ def _link_kind(r: Record, configured: bool) -> str:
     return "card_link" if configured else "none"
 
 
+def _days(n: int) -> str:
+    return "1 day" if n == 1 else f"{n} days"
+
+
 def chase_overdue(db: Session, today: date) -> list[Finding]:
     names, terms = ledger.names(db), ledger.terms(db)
     invoices, _ = ledger.open_items(db, "invoice")  # never what is left after a payment arrived short
@@ -292,16 +297,17 @@ def chase_overdue(db: Session, today: date) -> list[Finding]:
         listed = [{"record_id": str(r.id), "reference": r.reference, "open_minor": r.open_minor,
                    "due": ledger.due(r, terms).isoformat(), "days_overdue": (today - ledger.due(r, terms)).days,
                    "link": k} for r, k in zip(covered, links, strict=True)]
-        facts = {"customer": name, "reminder": f"{stage} of {LAST_STAGE} ({STAGES[stage]})",
+        facts = {"customer": name, "who owes whom": f"{name} owes you for invoices you sent them",
+                 "reminder": f"{stage} of {LAST_STAGE} ({STAGES[stage]})",
                  "invoices": [f"{r.reference or 'invoice'}: {money(r.open_minor)}, due {day(ledger.due(r, terms))}, "
-                              f"{(today - ledger.due(r, terms)).days} days overdue" for r in covered[:8]],
+                              f"{_days((today - ledger.due(r, terms)).days)} overdue" for r in covered[:8]],
                  "total overdue on these invoices": money(total)}
         if earlier:
             facts["earlier reminders"] = [f"reminder {s} sent on {day(d)}" for s, d in earlier]
         title = {1: f"{name} has {money(total)} overdue: send a friendly reminder",
                  2: f"{name} still owes {money(total)}: send a firmer reminder",
                  3: f"{name} still hasn't paid {money(total)}: send a final notice"}[stage]
-        body = {1: f"{len(covered)} invoice{'s' if len(covered) > 1 else ''} from {name}, {money(total)} in all, "
+        body = {1: f"{len(covered)} invoice{'s' if len(covered) > 1 else ''} to {name}, {money(total)} in all, "
                    "passed the due date. A friendly reminder now is the cheapest way to get paid.",
                 2: f"{name} hasn't paid {money(total)} since our first reminder on {day(earlier[-1][1])}. "
                    "A firmer second reminder is due." if earlier else "",

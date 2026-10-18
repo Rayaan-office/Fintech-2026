@@ -57,7 +57,7 @@ describe("Ask anything", () => {
   it("offers example questions about records and documents", async () => {
     const { calls } = setup();
     const chips = within(await screen.findByRole("group", { name: "Or ask anything about your records and documents" }));
-    expect(chips.getByRole("button", { name: "How much did we spend by category each month this year?" })).toBeInTheDocument();
+    expect(chips.getByRole("button", { name: "How much did we spend on each category this year?" })).toBeInTheDocument();
     await userEvent.click(chips.getByRole("button", { name: "Which supplier mentions late payment fees?" }));
     expect(await screen.findByText(/charges a late payment fee/)).toBeInTheDocument();
     expect(bodyOf(calls.find((c) => c.path === "/api/ask")!.init)).toEqual({ question: "Which supplier mentions late payment fees?" });
@@ -80,7 +80,7 @@ describe("Ask anything", () => {
 
   it("shows grouped totals in the usual table", async () => {
     setup({ reply: byMonthReply });
-    await userEvent.click(await screen.findByRole("button", { name: "How much did we spend by category each month this year?" }));
+    await userEvent.click(await screen.findByRole("button", { name: "How much did we spend on each category this year?" }));
     const table = within(await screen.findByRole("figure", { name: "Bills by month, 1 Jan 2026 to 18 Oct 2026" }));
     expect(table.getByRole("row", { name: /March 2026/ })).toHaveTextContent("March 2026£2,400.004£600.00");
   });

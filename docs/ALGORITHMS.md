@@ -214,7 +214,7 @@ The chat assistant answers using read-only tools that run the calculations above
 | What-if | "Can I afford a new van next month?" |
 | Financing options | "How could I cover a shortfall in December?" |
 | Recommendations | "Is there anything I should look at?" |
-| Totals from the records | "How much did we spend by category each month this year?", "How many invoices did we send in March?" |
+| Totals from the records | "How much did we spend on each category this year?", "How many invoices did we send in March?" |
 | Search the documents | "Which supplier mentions late payment fees?" |
 
 ### Totals from the records

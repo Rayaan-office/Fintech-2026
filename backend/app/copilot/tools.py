@@ -234,6 +234,7 @@ KINDS = {
     "fees": ("Payment platform fees", "fees", and_(Record.kind == "fee")),
 }
 _RECORD_LABEL = {"invoice": "Invoice", "bill": "Bill", "bank_txn": "Bank payment", "fee": "Fee"}
+_ONE = {"invoices": "invoice", "bills": "bill", "payments in": "payment in", "payments out": "payment out", "fees": "fee"}
 MAX_ROWS = 24
 MAX_MONTHS = 24
 _CATEGORY = re.compile(r"^[A-Za-z][A-Za-z &/,'()-]{1,39}$")
@@ -279,6 +280,9 @@ def query_records(db: Session, today: date, kind: str | None = None, party_id=No
         filters.append(Record.counterparty_id == party_id)
     if category:
         filters.append(func.lower(Record.category) == category.strip().lower()[:80])
+    own_transfers = kind in ("money_in", "money_out") and not category
+    if own_transfers:  # moving money between the business's own accounts is not money in or out
+        filters.append(func.coalesce(Record.category, "") != "transfer")
     total, count = db.execute(select(func.coalesce(func.sum(Record.amount_minor), 0), func.count(Record.id))
                               .where(*filters)).one()
     total = int(total)  # a sum of whole pence comes back as a Decimal
@@ -301,11 +305,12 @@ def query_records(db: Session, today: date, kind: str | None = None, party_id=No
         return str(g)
 
     def line(lbl: str, amount: int, n: int) -> str:
+        many = f"{n} {_ONE[noun] if n == 1 else noun}"
         if measure == "count":
-            return f"{lbl}: {n} {noun}"
+            return f"{lbl}: {many}"
         if measure == "average":
-            return f"{lbl}: average {money(round(amount / n)) if n else money(0)} over {n} {noun}"
-        return f"{lbl}: {money(amount)} from {n} {noun}"
+            return f"{lbl}: average {money(round(amount / n)) if n else money(0)} over {many}"
+        return f"{lbl}: {money(amount)} from {many}"
 
     facts = {"what was counted": f"{title.lower()}" + (" (including VAT)" if kind in ("sales_invoices", "bills")
                                                         else "") + " in the business currency",
@@ -313,6 +318,7 @@ def query_records(db: Session, today: date, kind: str | None = None, party_id=No
              **({"limited to": f"the last {MAX_MONTHS} months"} if clipped else {}),
              **({"supplier or customer": names.of(party_id) or "the one asked about"} if party_id else {}),
              **({"category": category.strip()[:80]} if category else {}),
+             **({"left out": "transfers between the business's own accounts"} if own_transfers else {}),
              "all together": line("all together", total, count)}
     by = {"party": "by supplier or customer"}.get(group_by, f"by {group_by}")
     if rows:

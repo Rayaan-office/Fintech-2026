@@ -16,7 +16,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 | 5 | Accounting connector (QuickBooks) | Done |
 | 6 | Ledger, matching, forecast and analysis | Done |
 | 7 | Approvals, recommendations, financing and assistant | Done |
-| 7b | Learning from decisions, getting paid, ask anything | Done (live check to do) |
+| 7b | Learning from decisions, getting paid, ask anything | Done |
 | 8 | Frontend: see stages F3–F6 below | F3–F5 done; F6 drafted |
 | 9 | Hardening and submission material | Not started |
 
@@ -187,7 +187,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
   - getting slower was diluted by older invoices.
 - Found in the live check: the AI ran out of room before answering (token allowance raised), and "Acme" in a question wasn't hidden (a short name now becomes its placeholder, or both placeholders when two suppliers share it).
 
-## Stage 7b: Learning from decisions, getting paid, ask anything (done, live check to do)
+## Stage 7b: Learning from decisions, getting paid, ask anything (done)
 
 - Learning from decisions (`copilot/learning.py`, `api/learning.py`):
   - corrections are kept beside the AI's original answer and the supplier; after 2 matching corrections on approved documents we fill the value in next time (category, type, currency, payment terms, supplier name), marked "Filled from your past corrections" with Undo;
@@ -201,7 +201,7 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
 - Ask anything (`copilot/tools.py`, `copilot/passages.py`):
   - a query tool: totals, counts or averages by month, category or customer and supplier, built by our code from fixed choices, never SQL from the AI;
   - document search (Postgres full-text) returning short passages with personal and bank details removed and names as placeholders.
-- Tests: 131 new, 480 backend and 156 frontend tests pass.
+- Tests: 133 new, 483 backend and 156 frontend tests pass.
 - Bugs fixed:
   - a corrected supplier or total on a bill waiting for approval was ignored;
   - a second correction lost the AI's original answer;
@@ -209,6 +209,11 @@ Backend stages are numbered 0–9; frontend stages F1–F6 follow the backend st
   - international transfers that lost a typical bank charge were never matched;
   - a customer could be chased from two cards at once;
   - in the assistant: placeholder numbers clashed across turns, a fallback answer kept personal details in the history, and a document's hidden person could be shown with a name from the question.
+- Live check against the real AI on the dev company:
+  - reminder cards show their step, invoices and days overdue; an approved friendly reminder to Corner Deli reached the mailbox with a sandbox card link, which opened a checkout for INV-2077 at £300.00, and the step was recorded;
+  - the card-or-transfer comparison for Green Leaf Bistro: 17 days sooner by card against £319.89 in fees;
+  - document search returned passages with sort codes and the bank's name hidden; totals by category matched.
+- Found in the live check: reminders read "invoice from" a customer and "1 days", a cost card left out the customer's name, and money moved between the business's own accounts counted as spending.
 
 ## Stage 9: Hardening and submission
 

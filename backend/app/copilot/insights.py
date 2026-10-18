@@ -38,7 +38,9 @@ _s = get_settings()
 INSTRUCTIONS = (
     "You write one recommendation for a small business owner from the facts our code found. "
     "The title says what happened in at most 12 words. The body says it in two or three short sentences "
-    "with the key figures, then one practical next step. Do not add anything the facts don't say."
+    "with the key figures, then one practical next step. Do not add anything the facts don't say. "
+    "When the facts name a supplier or customer, the title names them. A customer owes the business money "
+    "for invoices the business sent them; the business pays its suppliers."
 )
 WORSE_BY = 1.2  # a dismissed or unchanged finding is shown again when it is this much worse
 
