@@ -1,4 +1,6 @@
 import {
+  BanknoteIcon,
+  BellRingIcon,
   BuildingIcon,
   ChevronDownIcon,
   ClockIcon,
@@ -18,9 +20,10 @@ import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { useCan, useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
-import { useDismissRecommendation, useDraftNextStep, useRecommendations, useRefreshRecommendations } from "@/api/hooks";
+import { useDismissRecommendation, useDraftNextStep, useRecommendations, useRecordBankCharge, useRefreshRecommendations } from "@/api/hooks";
 import type { Action, Recommendation, RecommendationType, RecommendationsRun } from "@/api/types";
 import { ActionConfirmation } from "@/components/ActionConfirmation";
+import { BankChargeStep, GettingPaidSummary, isPaymentCosts, isReminder, PaymentCosts, ReminderChip, ReminderInvoices } from "@/components/GettingPaid";
 import { Worded } from "@/components/AiText";
 import { Initials } from "@/components/Initials";
 import { Money } from "@/components/Money";
@@ -43,6 +46,8 @@ export const RECOMMENDATION_TYPES: Record<RecommendationType, { label: string; i
   slow_payer: { label: "Slow-paying customer", icon: ClockIcon },
   spending_creep: { label: "Spending creep", icon: WalletIcon },
   customer_concentration: { label: "Reliance on one customer", icon: UsersIcon },
+  payment_costs: { label: "Cost of getting paid", icon: BanknoteIcon },
+  chase_overdue: { label: "Payment reminder", icon: BellRingIcon },
 };
 
 const PAGES: Record<string, string> = { "/health": "business health", "/cash-flow": "cash flow", "/financing": "financing" };
@@ -70,6 +75,7 @@ export default function RecommendationsPage() {
           </Button>
         }
       />
+      <GettingPaidSummary />
       <QueryView query={recs} loading={<ListSkeleton rows={4} />} empty={<NoRecommendations />}>
         {(data) => (data.items.length === 0 ? <NoRecommendations /> : <RecommendationList items={data.items} />)}
       </QueryView>
@@ -114,6 +120,16 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
       },
       onError: (err) => toast.error(errorMessage(err)),
     });
+  const bankCharge = useRecordBankCharge();
+  const startBankCharge = (r: Recommendation) =>
+    bankCharge.mutate(r.id, {
+      onSuccess: ({ action }) => {
+        setDrafts((d) => ({ ...d, [r.id]: action }));
+        setOpenId(r.id);
+      },
+      onError: (err) => toast.error(errorMessage(err)),
+    });
+  const preparing = (r: Recommendation) => (draft.isPending && draft.variables === r.id) || (bankCharge.isPending && bankCharge.variables === r.id);
 
   return (
     <>
@@ -146,12 +162,14 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="text-xs font-medium text-muted-foreground">{type.label}</span>
                       <SeverityBadge severity={r.severity} />
+                      <ReminderChip rec={r} />
                       <span className="text-xs text-muted-foreground">{formatRelative(r.updated_at ?? r.created_at)}</span>
                     </div>
                     <h2 id={`rec-${r.id}`} className="text-[15px] font-semibold">
                       {r.title}
                     </h2>
                     <Worded wording={r.summary} />
+                    {isReminder(r.getting_paid) && <ReminderInvoices detail={r.getting_paid} />}
                     <WhyHint why={r.why} />
                   </div>
                   {r.at_stake_minor !== null && (
@@ -164,7 +182,7 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
-                  <NextStep rec={r} drafting={draft.isPending && draft.variables === r.id} onDraft={() => startDraft(r)} />
+                  <NextStep rec={r} drafting={preparing(r)} onDraft={() => (r.next_step?.kind === "record_bank_charge" ? startBankCharge(r) : startDraft(r))} />
                   <Button variant="secondary" onClick={() => setOpenId(r.id)}>
                     See before and after
                   </Button>
@@ -186,8 +204,8 @@ function RecommendationList({ items }: { items: Recommendation[] }) {
           <RecommendationDetail
             rec={open}
             draft={drafts[open.id] ?? null}
-            drafting={draft.isPending && draft.variables === open.id}
-            onDraft={() => startDraft(open)}
+            drafting={preparing(open)}
+            onDraft={() => (open.next_step?.kind === "record_bank_charge" ? startBankCharge(open) : startDraft(open))}
             onDone={() => setDrafts(({ [open.id]: _, ...rest }) => rest)}
           />
         )}
@@ -207,6 +225,7 @@ function NextStep({ rec, drafting, onDraft }: { rec: Recommendation; drafting: b
   const can = useCan();
   const step = rec.next_step;
   if (!step) return null;
+  if (step.kind === "record_bank_charge") return <BankChargeStep rec={rec} preparing={drafting} onPrepare={onDraft} />;
   if (step.kind) {
     const status = step.action?.status;
     if (status === "executed") {
@@ -308,6 +327,8 @@ function RecommendationDetail({
         </div>
       )}
       <Worded wording={rec.summary} />
+      {isReminder(rec.getting_paid) && <ReminderInvoices detail={rec.getting_paid} />}
+      {isPaymentCosts(rec.getting_paid) && <PaymentCosts detail={rec.getting_paid} />}
       {rec.evidence.length > 0 && (
         <section aria-label="Before and after" className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -348,10 +369,17 @@ function RecommendationDetail({
         </p>
       )}
       {draft ? (
-        <section aria-label="Draft email" className="grid gap-2">
-          <h3 className="text-sm font-medium">The draft email</h3>
+        <section aria-label={draft.type === "record_bank_charge" ? "Bank charge to record" : "Draft email"} className="grid gap-2">
+          <h3 className="text-sm font-medium">{draft.type === "record_bank_charge" ? "The bank charge to record" : "The draft email"}</h3>
           <ActionConfirmation confirmation={draft} onDone={onDone} />
         </section>
+      ) : rec.next_step?.kind === "record_bank_charge" ? (
+        rec.next_step.action?.status !== "executed" && (
+          <div>
+            <BankChargeStep rec={rec} preparing={drafting} onPrepare={onDraft} />
+            <p className="mt-2 text-xs text-muted-foreground">Nothing changes until a finance manager or business owner approves it.</p>
+          </div>
+        )
       ) : (
         rec.next_step?.kind &&
         rec.next_step.action?.status !== "executed" && (

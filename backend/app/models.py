@@ -278,6 +278,8 @@ class Record(Base):
     lines: Mapped[list] = mapped_column(JSONB, default=list)
     tax_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     external: Mapped[dict] = mapped_column(JSONB, default=dict)  # ids in the source system
+    # How a payment was made: card | bank_transfer | international_transfer | cash | unknown
+    method: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = _created()
 
 
@@ -475,9 +477,30 @@ class ProcessedEvent(Base):
     at: Mapped[datetime] = _created()
 
 
+# ── Getting paid ───────────────────────────────────────────────────────────
+
+
+class Reminder(Base):
+    """A payment reminder sent for one invoice, with its stage (1 friendly, 2 firm, 3 final notice)
+    and the card payment link it carried, if any."""
+
+    __tablename__ = "reminders"
+    __table_args__ = (UniqueConstraint("business_id", "record_id", "stage"),)
+    id: Mapped[uuid.UUID] = _id()
+    business_id: Mapped[uuid.UUID] = _bid()
+    record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("records.id"), index=True)
+    stage: Mapped[int] = mapped_column(Integer)
+    action_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    link_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    link_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # the amount the link asks for
+    sent_at: Mapped[datetime] = _created()
+
+
 TENANT_TABLES = [
     "connections", "accounts", "counterparties", "counterparty_versions", "documents", "extractions",
     "corrections", "records", "matches", "actions", "approvals", "recommendations", "mutes",
     "planned_items", "business_profiles", "chat_threads", "chat_messages", "ai_calls", "notifications",
     "handoff_tokens", "audit_log", "processed_events",
+    # Getting paid
+    "reminders",
 ]

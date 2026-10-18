@@ -9,10 +9,12 @@ import os
 import sys
 from pathlib import Path
 
+TEST_DB = os.environ.get("COPILOT_TEST_DB", "copilot_test")
+
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(_ROOT / "backend"), str(_ROOT)]
 
-os.environ["POSTGRES_DB"] = "copilot_test"
+os.environ["POSTGRES_DB"] = TEST_DB
 os.environ.setdefault("APP_ENV", "test")
 os.environ["APP_BASE_URL"] = "http://testserver"
 
@@ -21,7 +23,7 @@ from sqlalchemy import text  # noqa: E402
 
 from app import bootstrap  # noqa: E402
 
-bootstrap.ensure_database("copilot_test")
+bootstrap.ensure_database(TEST_DB)
 bootstrap.run()
 
 from fastapi.testclient import TestClient  # noqa: E402

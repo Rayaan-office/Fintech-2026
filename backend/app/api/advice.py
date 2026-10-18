@@ -55,6 +55,7 @@ def rec_out(db: Session, r: Recommendation, names: dict) -> dict:
                       "can_draft": bool(step.get("action")) and r.status == "new" and not pending,
                       "action": pending, "related_action_ids": related} if step.get("label") else None,
         "can_mute": r.kind != "bank_details_changed",
+        "getting_paid": step.get("getting_paid"),
     }
 
 
@@ -132,13 +133,14 @@ def propose_email(db: Session, p: Principal, action_type: str, d: "insights.Draf
         payload["contact_as_of"] = d.contact_as_of
     if recommendation_id:
         payload["recommendation_id"] = str(recommendation_id)
+    payload.update(d.extra_payload)
     return actions.propose(
         db, p.business_id, action_type, payload=payload, requested_by=p.actor,
         summary=f"Email {d.counterparty.display_name}: {d.subject}",
         effects=[f"Send this email to {d.to}" + (" (the address on record before the change)" if d.contact_as_of
-                                                 else ""), f"Subject: {d.subject}", d.body],
+                                                 else ""), f"Subject: {d.subject}", d.body] + d.extra_effects,
         reasons=["Emails to suppliers and customers go out only after a person approves them."]
-        + (["The AI drafted this email; check the wording."] if d.written.ai_written else []))
+        + (["The AI drafted this email; check the wording."] if d.written.ai_written else []) + d.extra_reasons)
 
 
 # ── Financing ──────────────────────────────────────────────────────────────

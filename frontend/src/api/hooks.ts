@@ -309,3 +309,16 @@ export function useSetAiPaused() {
     onSuccess: () => invalidate("me"),
   });
 }
+
+// Getting paid
+
+export const useGettingPaid = () => useScreen<import("./types").GettingPaid>(["getting-paid"], "/api/getting-paid");
+
+/** Prepares recording what arrived short as bank charges; a finance manager or owner approves it. */
+export function useRecordBankCharge() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (recId: string) => api<{ action: Action }>(recPath(recId, "bank-charge"), { method: "POST" }),
+    onSuccess: () => invalidate("recommendations", "inbox", "getting-paid"),
+  });
+}

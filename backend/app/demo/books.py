@@ -131,11 +131,12 @@ def fill(books: Books) -> dict:
                    if quickbooks._pence(m.get("TotalAmt")) != b.total]
 
     paid_in = {r.get("PaymentRefNum") for r in books.query("Payment")}
+    # A payment that arrived short is left for our matching to find at the bank (and the bank charge to record)
     payments = _batch(books, "Payment", [{
         "CustomerRef": {"value": customers[inv.customer]}, "TotalAmt": _pounds(inv.total), "TxnDate": _iso(inv.paid_on),
         "PaymentRefNum": inv.number, "DepositToAccountRef": {"value": bank},
         "Line": [{"Amount": _pounds(inv.total), "LinkedTxn": [{"TxnId": have_inv[inv.number], "TxnType": "Invoice"}]}],
-    } for inv in s.invoices if inv.paid_on and inv.number not in paid_in])
+    } for inv in s.invoices if inv.paid_on and not inv.short and inv.number not in paid_in])
 
     paid_out = {r.get("DocNumber") for r in books.query("BillPayment")}
     bill_payments = _batch(books, "BillPayment", [{

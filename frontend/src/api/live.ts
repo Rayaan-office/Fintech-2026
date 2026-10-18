@@ -56,3 +56,8 @@ export function useLiveUpdates(enabled = true) {
     };
   }, [enabled, qc]);
 }
+
+// Getting paid: approvals and sent reminders change what is owed and what arrived short
+AFFECTS.action!.push("getting-paid");
+AFFECTS.matches!.push("getting-paid");
+AFFECTS.recommendations!.push("getting-paid");

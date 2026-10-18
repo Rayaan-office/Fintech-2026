@@ -6,7 +6,7 @@ Stripe can't backdate payments, so the sandbox holds the card sales from the day
 about a week's worth, the size of one weekly payout in the story. The six months before
 that are in the bank feed as weekly "STRIPE PAYMENTS UK PAYOUT" credits.
 
-It also adds the story's five customers, a special order invoice that was paid by card, a
+It also adds the story's customers, a special order invoice that was paid by card, a
 catering deposit invoice that is still open, a declined card, a refund and a card dispute.
 Everything is tagged with a key, so running it again adds nothing.
 

@@ -38,10 +38,12 @@ def load(bid, s: story.Story | None = None) -> story.Story:
         db.flush()
         for inv in s.invoices:
             net = sum(q * p for _, q, p in inv.lines)
+            # As in app/demo/books.py: a payment that arrived short is left open in the books, for matching
+            paid = inv.paid_on if not inv.short else None
             db.add(Record(business_id=bid, source="quickbooks", source_ref=f"story:Invoice:{inv.number}",
                           kind="invoice", direction="in", amount_minor=inv.total,
-                          open_minor=0 if inv.paid_on else inv.total, currency="GBP", date=inv.issue,
-                          due_date=inv.due, paid_date=inv.paid_on, status="paid" if inv.paid_on else "open",
+                          open_minor=0 if paid else inv.total, currency="GBP", date=inv.issue,
+                          due_date=inv.due, paid_date=paid, status="paid" if paid else "open",
                           counterparty_id=cps[inv.customer].id, reference=inv.number, category="sales",
                           tax_minor=inv.total - net, external={"qbo_type": "Invoice", "qbo_id": inv.number}))
         # The demo emails Acme's latest bill: it arrives as a document we read, with a price per unit on

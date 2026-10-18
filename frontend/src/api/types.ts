@@ -163,15 +163,16 @@ export type RecommendationType =
   | "price_rise"
   | "slow_payer"
   | "spending_creep"
-  | "customer_concentration";
+  | "customer_concentration"
+  | GettingPaidRecommendationType;
 
 /** One before-and-after line; `before` is empty when there is nothing to compare with. */
 export type Evidence = { label: string; before: string; after: string; record_id?: string };
 
 export type RecommendationNextStep = {
   label: string;
-  /** An email we can draft, or null for a step the person takes themselves. */
-  kind: "email_supplier" | "send_payment_reminder" | null;
+  /** An email we can draft, a bank charge to record, or null for a step the person takes themselves. */
+  kind: "email_supplier" | "send_payment_reminder" | "record_bank_charge" | null;
   href: string | null;
   can_draft: boolean;
   /** The drafted email's action, once there is one. */
@@ -197,6 +198,8 @@ export type Recommendation = {
   next_step: RecommendationNextStep | null;
   /** False for changed bank details: a new change is always shown. */
   can_mute: boolean;
+  /** Reminder stage or payment costs, for those two kinds only. */
+  getting_paid?: GettingPaidDetail | null;
 };
 
 export type RecommendationsRun = { new: number; updated: number; resolved: number };
@@ -426,3 +429,80 @@ export type SearchResult = { id: string; kind: string; label: string; href: stri
 // Settings
 
 export type TeamMember = { id: string; name: string; email: string; roles: Role[]; approval_limit_minor: number | null; second_approver: boolean };
+
+// Getting paid (backend/app/analytics/getting_paid.py and api/payments.py)
+
+export type GettingPaidRecommendationType = "payment_costs" | "chase_overdue";
+
+export type PaymentMethod = "card" | "bank_transfer" | "international_transfer" | "cash" | "unknown";
+
+/** One way of paying over the last 180 days. The card fee is what card would have cost (or did cost). */
+export type PaymentMethodRow = {
+  method: PaymentMethod;
+  label: string;
+  payments: number;
+  amount_minor: number;
+  short_minor: number;
+  short_payments: number;
+  card_fee_minor: number;
+  card_fee_is_estimate: boolean;
+  days_to_pay: number;
+};
+
+/** "yours": this business's own card fees; "typical": a stated typical rate, used until there are enough. */
+export type CardRate = { rate: number; fixed_minor: number; source: "yours" | "typical"; label: string; payments: number };
+
+export type ReminderLink = "card_link" | "invoice_page" | "none";
+
+export type ReminderDetail = {
+  reminder: {
+    stage: 1 | 2 | 3;
+    of: number;
+    tone: "friendly" | "firm" | "final notice";
+    invoices: { record_id: string; reference: string | null; open_minor: number; due: string; days_overdue: number; link: ReminderLink }[];
+    /** A final notice: only a business owner approves it. */
+    owner_only: boolean;
+    previous: { stage: number; sent_on: string }[];
+    link: "all" | "some" | "none";
+    links_configured: boolean;
+  };
+};
+
+export type PaymentCostsDetail = {
+  methods: PaymentMethodRow[];
+  card_rate: CardRate;
+  main_method: PaymentMethod;
+  short_minor: number;
+  short_payments: number;
+  card_fee_minor: number;
+  saving_minor: number;
+  days_sooner_by_card: number | null;
+  leftovers: { record_id: string; reference: string | null; short_minor: number }[];
+  leftover_minor: number;
+  links_configured: boolean;
+  tip: string;
+};
+
+export type GettingPaidDetail = ReminderDetail | PaymentCostsDetail;
+
+/** What getting paid cost and how long it took, over the last 180 days. */
+export type GettingPaid = {
+  since: string;
+  days: number;
+  lost_to_short_minor: number;
+  short_payments: number;
+  could_save_minor: number;
+  days_to_pay_by_card: number | null;
+  days_to_pay_by_transfer: number | null;
+  days_sooner_by_card: number | null;
+  left_to_record_minor: number;
+  left_to_record_count: number;
+  methods: PaymentMethodRow[];
+  card_rate: CardRate;
+  /** The rate used for customers who pay from abroad (the same as card_rate when it is the business's own). */
+  card_rate_abroad: CardRate;
+  /** Stage 0: paid before any reminder. */
+  paid_after_reminder: { stage: number; invoices: number; amount_minor: number; days_to_pay: number }[];
+  links_configured: boolean;
+  links_problem: string | null;
+};

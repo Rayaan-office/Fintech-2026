@@ -132,11 +132,15 @@ def who_owes_you(db: Session, today: date) -> dict:
         if late > 30:
             overdue_30 += r.open_minor
     total = sum(r.open_minor for r in invoices)
+    # Left over after a payment arrived short: a bank charge to record, not a debt (never overdue)
+    cur = ledger.business(db).currency
+    short = [r for r, _ in ledger.settled_short(db) if r.open_minor > 0 and r.currency == cur]
     return {"total_minor": total, "count": len(invoices),
             "overdue_minor": sum(r.open_minor for r in invoices if (today - ledger.due(r, terms)).days > 0),
             "over_30_share": round(overdue_30 / total, 3) if total else 0.0,
             "buckets": [{"bucket": k, "amount_minor": v} for k, v in buckets.items()],
-            "other_currencies": len(foreign)}
+            "other_currencies": len(foreign),
+            "short_paid_minor": sum(r.open_minor for r in short), "short_paid_count": len(short)}
 
 
 def days_to_get_paid(db: Session, today: date) -> float | None:
@@ -144,10 +148,12 @@ def days_to_get_paid(db: Session, today: date) -> float | None:
     rows = db.execute(select(Record).where(Record.kind == "invoice", Record.status == "paid",
                                            Record.paid_date >= today - timedelta(days=90),
                                            Record.paid_date <= today)).scalars().all()
-    total = sum(r.amount_minor for r in rows)
+    paid = [(r, r.paid_date) for r in rows] + [(r, on) for r, on in ledger.settled_short(db)
+                                                if today - timedelta(days=90) <= on <= today]
+    total = sum(r.amount_minor for r, _ in paid)
     if not total:
         return None
-    return round(sum((r.paid_date - r.date).days * r.amount_minor for r in rows) / total, 1)
+    return round(sum((on - r.date).days * r.amount_minor for r, on in paid) / total, 1)
 
 
 def runway(db: Session, today: date) -> tuple[float | None, int]:

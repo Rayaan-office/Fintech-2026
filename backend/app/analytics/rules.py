@@ -13,6 +13,7 @@ No AI here: the AI only words a finding afterwards, and its figures are checked 
   spending creep            a spending category rose 3 months in a row (by 10% or more in all),
                             or a new monthly charge appeared
   reliance on one customer  one customer was more than 30% of what was invoiced in 90 days
+  payment costs, reminders  see analytics/getting_paid.py
 """
 
 import itertools
@@ -358,9 +359,12 @@ def slow_payers(db: Session, today: date) -> list[Finding]:
     rows = db.execute(select(Record).where(Record.kind == "invoice", Record.status == "paid",
                                            Record.paid_date.is_not(None), Record.counterparty_id.is_not(None),
                                            Record.date >= today - timedelta(days=365))).scalars().all()
+    # An invoice paid except for what arrived short was paid the day its payment arrived
+    paid = [(r, r.paid_date) for r in rows] + [(r, on) for r, on in ledger.settled_short(db)
+                                                if r.counterparty_id and r.date >= today - timedelta(days=365)]
     late: dict = defaultdict(list)
-    for r in rows:
-        late[r.counterparty_id].append((r.date, (r.paid_date - ledger.due(r, terms)).days))
+    for r, on in paid:
+        late[r.counterparty_id].append((r.date, (on - ledger.due(r, terms)).days))
     invoices, _ = ledger.open_items(db, "invoice")
     out = []
     for cid, seen in late.items():
@@ -408,11 +412,9 @@ def slow_payers(db: Session, today: date) -> list[Finding]:
                        "after": f"{statistics.fmean(recent) if slower else mean:.0f}"}]
             + [{"label": f"Invoice {r.reference or ''}".strip(), "before": f"due {day(ledger.due(r, terms))}",
                 "after": money(r.open_minor), "record_id": str(r.id)} for r in overdue[:5]],
-            next_step=({"label": f"Draft a payment reminder to {name}", "action": "send_payment_reminder",
-                        "purpose": "a friendly reminder about the overdue invoices, asking when they will be paid",
-                        "record_ids": [str(r.id) for r in overdue[:5]]} if overdue else
-                       {"label": "Consider shorter payment terms or a deposit", "action": None,
-                        "href": "/health"}),
+            # Overdue invoices are chased by the staged reminders (getting_paid.chase_overdue), so a customer
+            # is never sent reminders from two places
+            next_step={"label": "Consider shorter payment terms or a deposit", "action": None, "href": "/health"},
             measure=mean if not slower else statistics.fmean(recent),
         ))
     return out
@@ -545,4 +547,7 @@ def find_all(db: Session, today: date | None = None) -> list[Finding]:
     found = details_changed(db, today) + price_rises(db, today) + slow_payers(db, today)
     found += spending_creep(db, today, skip={f.counterparty_id for f in found if f.kind == "price_rise"})
     found += concentration(db, today)
+    from . import getting_paid
+
+    found += getting_paid.payment_costs(db, today) + getting_paid.chase_overdue(db, today)
     return sorted(found, key=lambda f: -f.score)

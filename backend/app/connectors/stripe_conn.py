@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..analytics import methods
 from ..config import get_settings
 from ..models import Account, Counterparty
 from ..pipeline import counterparties
@@ -74,6 +75,7 @@ class Invoice(_Obj):
     status_transitions: dict = {}
     total_taxes: list[dict] | None = None
     lines: dict = {}
+    hosted_invoice_url: str | None = Field(None, max_length=500)  # Stripe's own page for paying it
 
 
 class InvoicePayment(_Obj):
@@ -94,6 +96,7 @@ class Charge(_Obj):
     payment_intent: str | None = None
     balance_transaction: dict | str | None = None
     disputed: bool = False
+    payment_method_details: dict | None = None
 
 
 class Refund(_Obj):
@@ -230,7 +233,9 @@ def _invoice(db: Session, business_id, inv: Invoice, cp: Counterparty | None, pa
         lines=[{"description": (ln.description or "")[:200], "quantity": ln.quantity, "amount_minor": ln.amount}
                for ln in lines],
         external={"stripe_invoice": inv.id, "payment_intents": payments,
-                  "written_off": inv.status == "uncollectible"},
+                  "written_off": inv.status == "uncollectible",
+                  "hosted_invoice_url": inv.hosted_invoice_url
+                  if (inv.hosted_invoice_url or "").startswith("https://invoice.stripe.com/") else None},
     )
 
 
@@ -239,14 +244,15 @@ def _charge(db: Session, business_id, ch: Charge, cp: Counterparty | None, invoi
     bt = _bt(ch.balance_transaction)
     fee = int(bt.get("fee") or 0)
     invoice_id, invoice_number = invoice or (None, None)
+    method, card_country = methods.from_stripe(ch.payment_method_details)
     upsert_record(
         db, business_id, "stripe", ch.id, kind="payment_in", direction="in", amount_minor=ch.amount, open_minor=0,
         currency=_cur(ch.currency), date=_day(ch.created), status="posted", counterparty_id=cp.id if cp else None,
         reference=str(ch.metadata.get("invoice_number") or invoice_number or "")[:200] or None,
-        description=(ch.description or "Card payment")[:500], category="sales",
+        description=(ch.description or "Card payment")[:500], category="sales", method=method,
         external={"invoice": invoice_id, "payment_intent": ch.payment_intent, "fee_minor": fee,
                   "net_minor": bt.get("net"), "settlement_currency": _cur(bt["currency"]) if bt.get("currency") else None,
-                  "refunded_minor": ch.amount_refunded, "disputed": ch.disputed},
+                  "refunded_minor": ch.amount_refunded, "disputed": ch.disputed, "card_country": card_country},
     )
     if fee <= 0:
         return 1

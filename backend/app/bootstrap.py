@@ -34,6 +34,8 @@ CREATE POLICY tenant ON vault.pii_values
 MIGRATIONS = [
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS timeline jsonb NOT NULL DEFAULT '[]'",
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '{}'",
+    # Getting paid
+    "ALTER TABLE records ADD COLUMN IF NOT EXISTS method varchar(30)",
 ]
 
 

@@ -46,11 +46,13 @@ def test_cash_today_is_the_bank_balance(books):
 
 def test_every_bank_payment_for_a_paid_invoice_or_bill_is_linked_and_nothing_wrong_is_suggested(books):
     s = books["story"]
-    paid_numbers = {i.number for i in s.invoices if i.paid_on} | {b.number for b in s.bills if b.paid_on}
+    paid_numbers = {i.number for i in s.invoices if i.paid_on and not i.short} | {b.number for b in s.bills if b.paid_on}
     by_number = [ln for ln in s.bank if any(n in ln.description for n in paid_numbers)]
     no_number = [ln for ln in s.bank if ln.description in ("BRIGHTSPARK ENERGY DD", "CLOUDDESK SOFTWARE CARD")]
     assert books["matched"]["linked"] == len(by_number) + len(no_number)
-    assert books["matched"]["suggested"] == 0 and books["matched"]["auto"] == 0
+    # Payments that arrived short are open in the books, so matching settles them (small and confident)
+    short = [i for i in s.invoices if i.short]
+    assert books["matched"]["suggested"] == 0 and books["matched"]["auto"] == len(short) > 0
     with _db(books) as db:
         assert db.execute(select(Match).where(Match.status == "suggested")).first() is None
 

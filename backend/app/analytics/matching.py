@@ -15,6 +15,9 @@ payments (QuickBooks and Stripe tell us exactly what each payment settled).
 
 A bank payment that names an invoice or bill the accounting software already shows as paid
 is the same money arriving: we link the two ("already settled") without changing either.
+
+A payment a little below the invoice (within the fee allowance) records how much arrived short.
+What is left is a bank charge, not a debt: it is never chased (see ledger.short_paid).
 """
 
 import itertools
@@ -26,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Counterparty, Match, Record
+from . import methods
 
 CONFIDENT = 85
 SUGGEST = 60
@@ -33,6 +37,7 @@ MAX_COMBINATION = 4
 SAME_NAME = 80  # name similarity (0-100) that counts as the same party
 OTHER_NAME = 90  # a known party named this clearly in a payment is a different party
 LINKS_OWN = ("quickbooks", "stripe")  # systems that record which payment settled what
+INTL_CHARGE = 30_00  # the most an international transfer may arrive short and still match
 
 
 @dataclass
@@ -54,12 +59,20 @@ class Context:
     named: dict = field(default_factory=dict)  # (payment id, side) -> known names it mentions
 
 
-def _fee_ok(target_amount: int, paid: int) -> bool:
-    """Same amount, allowing small payment-platform fees (up to 3% + 50p)."""
+def _fee_ok(target_amount: int, paid: int, international: bool = False) -> bool:
+    """Same amount, allowing small payment-platform fees (up to 3% + 50p). An international transfer
+    often loses a fixed charge on the way instead, so for one we allow up to £30 (at most 10%)."""
     if paid == target_amount:
         return True
     diff = target_amount - paid
-    return 0 < diff <= int(target_amount * 0.03) + 50
+    allowed = int(target_amount * 0.03) + 50
+    if international:
+        allowed = max(allowed, min(INTL_CHARGE, target_amount // 10))
+    return 0 < diff <= allowed
+
+
+def _international(payment: Record) -> bool:
+    return payment.kind == "bank_txn" and methods.of(payment) == "international_transfer"
 
 
 def _norm_ref(s: str | None) -> str:
@@ -135,7 +148,7 @@ def score(target: Record, payment: Record, ctx: Context) -> Candidate:
         return Candidate(target, payment, 0, out)
     signals: dict = {}
     pts = 0
-    if _fee_ok(target.open_minor or target.amount_minor, payment.amount_minor):
+    if _fee_ok(target.open_minor or target.amount_minor, payment.amount_minor, _international(payment)):
         pts += 40
         signals["amount"] = 40
     if _ref_found(target, payment, ctx):
@@ -165,7 +178,8 @@ def _exact(target: Record, payment: Record, ctx: Context) -> Candidate | None:
     if target.external.get("stripe_invoice") and target.external.get("stripe_invoice") == payment.external.get("invoice"):
         return Candidate(target, payment, 100, "platform_invoice_id", {"invoice_id": 100},
                          min(payment.amount_minor, target.open_minor))
-    if _ref_found(target, payment, ctx) and _fee_ok(target.open_minor, payment.amount_minor):
+    if _ref_found(target, payment, ctx) and _fee_ok(target.open_minor, payment.amount_minor,
+                                                    _international(payment)):
         return Candidate(target, payment, 100, "invoice_number", {"reference": 100},
                          min(payment.amount_minor, target.open_minor))
     same_party = target.counterparty_id and target.counterparty_id == payment.counterparty_id
@@ -313,12 +327,24 @@ def still_suggested(db: Session, m: Match) -> bool:
                                   and _party(t, p, ctx) == "same")
 
 
+def short_by(c: Candidate) -> int:
+    """How much less than the invoice arrived, when that is within the fee allowance: a bank charge
+    taken on the way (common with international transfers), not money the customer still owes."""
+    t, p = c.target, c.payment
+    if t.kind != "invoice" or c.rule in ("combination", "already_settled") or c.amount_minor != p.amount_minor:
+        return 0
+    short = (t.open_minor or 0) - p.amount_minor
+    return short if short > 0 and _fee_ok(t.open_minor, p.amount_minor, _international(p)) else 0
+
+
 def apply(db: Session, c: Candidate, status: str, decided_by: str) -> Match:
     """Save a match; when accepted, reduce what is still owed."""
     m = db.execute(select(Match).where(Match.left_id == c.target.id, Match.right_id == c.payment.id)).scalar_one_or_none()
     if not m:
+        short = short_by(c)
         m = Match(business_id=c.target.business_id, left_id=c.target.id, right_id=c.payment.id,
-                  amount_minor=c.amount_minor, score=c.score, rule=c.rule, signals=c.signals, status=status,
+                  amount_minor=c.amount_minor, score=c.score, rule=c.rule,
+                  signals={**c.signals, "short_minor": short} if short else c.signals, status=status,
                   decided_by=decided_by)
         db.add(m)
     else:
