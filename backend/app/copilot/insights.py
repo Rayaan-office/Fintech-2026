@@ -19,7 +19,7 @@ from uuid import UUID
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .. import events
@@ -117,9 +117,13 @@ def _save(state: State) -> State:
     bid = UUID(state["business_id"])
     new = updated = 0
     with tenant_session(bid) as db:
+        # Two runs can overlap (one after new data, one from "Check now"): save one at a time, and look again
+        # for what the other run may have just added
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"insights:{bid}"})
         for f, rec_id in state.get("to_write", []):
             w = state["written"][f.fingerprint]
-            rec = db.get(Recommendation, rec_id) if rec_id else None
+            rec = db.get(Recommendation, rec_id) if rec_id else db.execute(
+                select(Recommendation).where(Recommendation.fingerprint == f.fingerprint)).scalar_one_or_none()
             facts = {"facts": f.facts, "evidence": f.evidence, "why": f.why, "measure": f.measure,
                      "ai_saw": w.ai_saw, "model": w.model, "fact_check": w.problems}
             if rec is None:

@@ -1,5 +1,5 @@
 import { PauseCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Outlet } from "react-router";
 import { useCan, useCurrentUser } from "@/api/auth";
@@ -25,7 +25,16 @@ export function AppShell() {
     e.preventDefault();
     setSearchOpen((o) => !o);
   }, { enableOnFormTags: true, enableOnContentEditable: true });
-  useHotkeys("?", () => setShortcutsOpen(true), { useKey: true });
+  // "?" is typed with Shift on most keyboards, and on another key on some, so we match the character itself
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      e.preventDefault();
+      setShortcutsOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="min-h-dvh">
@@ -50,4 +59,8 @@ export function AppShell() {
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
+}
+
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }

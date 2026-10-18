@@ -370,3 +370,23 @@ Over the last 180 days:
 - what could be saved, after card fees, if the customers whose payments arrive short paid by card;
 - how many days sooner card payments arrive than bank transfers, once there are at least 3 card payments;
 - for each invoice paid, the reminder step it had reached when it was paid.
+
+## 15. Search
+
+The search box at the top of every page finds customers and suppliers by name, invoices and bills by reference or amount, documents by filename or supplier, open recommendations by title, and approvals waiting for a person by their summary.
+
+- **What counts as a match.** We look for the typed text anywhere in those fields, ignoring case. `%` and `_` are searched for as themselves, not as wildcards. Text that looks like money, such as `300`, `£300`, `300.00` or `1,800.00`, also finds invoices and bills of exactly that amount. A small typo in a supplier or customer name still finds them, using the same kind of name similarity we use when matching (section 3). Voided invoices and bills are left out. Fewer than 2 characters finds nothing; more than 100 is refused.
+- **Best first.** An exact match comes first, then text that starts with the search, then a word inside it that starts with it, then a match anywhere, then near-matches by name. At each of those levels, results are grouped by kind: customers, suppliers, invoices, bills, documents, recommendations, approvals. We show at most 20, and at most 8 of one kind, so one kind cannot crowd out the rest.
+- **Where a result leads.** Every result opens an existing page, by id only:
+
+| Result | Opens |
+|---|---|
+| Document | Its review view |
+| Invoice or bill read from a document | That document |
+| Unpaid bill from the books | The cash forecast, which shows unpaid bills |
+| Unpaid invoice from the books | Who owes you, on the business health page |
+| Customer or supplier, or a paid invoice or bill | Their newest open recommendation, else their newest document, else who owes you (customers) or biggest suppliers |
+| Recommendation | That recommendation |
+| Approval | That approval in the inbox |
+
+- **Private by design.** The search goes in the body of the request, not the address, so names never appear in addresses, browser history or access logs. We don't write what was searched for to the activity log or the server log. It runs in a read-only transaction that sees one business, and only for roles that can see all records (employees can't search). Each result is a short plain label, such as "Bill AS-1005 · Acme Supplies Ltd · £658.56", and the detectors from section 1 take out any bank details, emails or phone numbers, for example in a filename. Each person can search up to 60 times a minute.
