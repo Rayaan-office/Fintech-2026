@@ -392,7 +392,8 @@ export type SyncResult = { ok: true; counts: Record<string, number>; matched: Re
 /** A chart or table our code builds from the records (never the AI). */
 export type AskBlock =
   | { type: "chart"; kind: "forecast"; title: string; safety_level_minor: number; points: ForecastPoint[] }
-  | { type: "table"; title: string; columns: string[]; rows: (string | number | null)[][]; money_columns: number[] };
+  | { type: "table"; title: string; columns: string[]; rows: (string | number | null)[][]; money_columns: number[] }
+  | AskPassagesBlock;
 
 export type AskSuggestion = { type: "send_payment_reminder" | "email_supplier"; counterparty_id: string; label: string };
 
@@ -426,3 +427,18 @@ export type SearchResult = { id: string; kind: string; label: string; href: stri
 // Settings
 
 export type TeamMember = { id: string; name: string; email: string; roles: Role[]; approval_limit_minor: number | null; second_approver: boolean };
+
+// Ask anything
+
+/** A passage from a document that matched a search. Personal details show as [hidden …]. */
+export type AskPassage = { document_id: string; label: string; kind: string; date: string; text: string; href: string };
+export type AskPassagesBlock = { type: "passages"; title: string; items: AskPassage[] };
+
+/** This person's own questions: answered from our records, and passed the fact check first time. */
+export type AskStats = {
+  questions: number;
+  answered_from_data: number;
+  checked_first_try: number;
+  first_try_pct: number | null;
+  by_tool: Record<string, number>;
+};

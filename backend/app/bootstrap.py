@@ -34,6 +34,10 @@ CREATE POLICY tenant ON vault.pii_values
 MIGRATIONS = [
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS timeline jsonb NOT NULL DEFAULT '[]'",
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS fields jsonb NOT NULL DEFAULT '{}'",
+    # Ask anything: full-text search over the text the AI was shown (placeholders only)
+    ("ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_tsv tsvector GENERATED ALWAYS AS "
+     "(to_tsvector('english'::regconfig, coalesce(redacted_text, ''))) STORED"),
+    "CREATE INDEX IF NOT EXISTS ix_documents_search ON documents USING gin (search_tsv)",
 ]
 
 

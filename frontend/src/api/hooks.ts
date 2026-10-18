@@ -309,3 +309,9 @@ export function useSetAiPaused() {
     onSuccess: () => invalidate("me"),
   });
 }
+
+// Ask anything
+
+import type { AskStats } from "./types";
+
+export const useAskStats = () => useScreen<AskStats>(["ask", "stats"], "/api/ask/stats");

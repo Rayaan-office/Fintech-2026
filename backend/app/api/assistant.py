@@ -59,6 +59,12 @@ def threads(p: Principal = Depends(require(Perm.USE_ASSISTANT)), db: Session = D
     return {"items": [{"id": str(t.id), "title": t.title, "created_at": t.created_at.isoformat()} for t in rows]}
 
 
+@router.get("/ask/stats")
+def stats(p: Principal = Depends(require(Perm.USE_ASSISTANT)), db: Session = Depends(tenant_db)):
+    """Your own questions: how many we answered from your records, and how many passed the fact check first time."""
+    return assistant.stats(db, p.user_id)
+
+
 @router.get("/ask/threads/{thread_id}")
 def thread(thread_id: UUID, p: Principal = Depends(require(Perm.USE_ASSISTANT)), db: Session = Depends(tenant_db)):
     t = db.get(ChatThread, thread_id)

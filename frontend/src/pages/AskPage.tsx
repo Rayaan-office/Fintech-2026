@@ -1,13 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpIcon, HistoryIcon, Loader2Icon, MailIcon, MicIcon, PlusIcon } from "lucide-react";
+import { ArrowUpIcon, FileTextIcon, HistoryIcon, Loader2Icon, MailIcon, MicIcon, PlusIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/api/auth";
 import { errorMessage } from "@/api/client";
-import { useAsk, useAskAct, useAskThread, useAskThreads } from "@/api/hooks";
-import type { Action, AskBlock, AskMessage, AskReply, AskThread } from "@/api/types";
+import { useAsk, useAskAct, useAskStats, useAskThread, useAskThreads } from "@/api/hooks";
+import type { Action, AskBlock, AskMessage, AskPassagesBlock, AskReply, AskThread } from "@/api/types";
 import { ActionConfirmation } from "@/components/ActionConfirmation";
 import { Worded } from "@/components/AiText";
 import { ChartCard } from "@/components/ChartCard";
@@ -28,6 +28,14 @@ const STARTERS = [
   "Have any suppliers raised their prices?",
   "Why did my cash change this month?",
   "Can I afford an £18,000 van?",
+];
+
+/** Questions answered from our own query over the records, or from what the documents say. */
+const ANYTHING = [
+  "How much did we spend by category each month this year?",
+  "How many invoices did we send each month?",
+  "Which supplier mentions late payment fees?",
+  "What do our documents say about cancelling?",
 ];
 
 type AssistantMessage = Extract<AskMessage, { role: "assistant" }>;
@@ -83,6 +91,7 @@ export default function AskPage() {
           setThreadId(reply.thread_id);
           setPending(null);
           void qc.invalidateQueries({ queryKey: ["ask", "threads"] });
+          void qc.invalidateQueries({ queryKey: ["ask", "stats"] });
         },
         onError: (err) => setPending({ question: q, error: errorMessage(err) }),
       },
@@ -130,15 +139,10 @@ export default function AskPage() {
           ) : threadId && thread.isError ? (
             <ErrorState message={errorMessage(thread.error)} onRetry={() => void thread.refetch()} />
           ) : messages.length === 0 && !pending ? (
-            <div className="grid gap-3">
-              <p className="text-sm text-muted-foreground">Try one of these:</p>
-              <div className="flex flex-wrap gap-2">
-                {STARTERS.map((s) => (
-                  <button key={s} type="button" onClick={() => send(s)} className="rounded-full border bg-card px-3 py-1.5 text-left text-sm shadow-card hover:bg-accent">
-                    {s}
-                  </button>
-                ))}
-              </div>
+            <div className="grid gap-5">
+              <QuestionChips label="Try one of these" questions={STARTERS} onAsk={send} />
+              <QuestionChips label="Or ask anything about your records and documents" questions={ANYTHING} onAsk={send} />
+              <AskStatsLine />
             </div>
           ) : (
             <ol className="grid gap-6" aria-label="Conversation">
@@ -174,6 +178,33 @@ export default function AskPage() {
         <ThreadList current={threadId} onOpen={openThread} disabled={ask.isPending} />
       </SidePanel>
     </div>
+  );
+}
+
+function QuestionChips({ label, questions, onAsk }: { label: string; questions: string[]; onAsk: (q: string) => void }) {
+  return (
+    <div role="group" aria-label={label} className="grid gap-2">
+      <p className="text-sm text-muted-foreground">{label}:</p>
+      <div className="flex flex-wrap gap-2">
+        {questions.map((q) => (
+          <button key={q} type="button" onClick={() => onAsk(q)} className="rounded-full border bg-card px-3 py-1.5 text-left text-sm shadow-card hover:bg-accent">
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** How this person's questions were answered so far. Shown once there is something to count. */
+function AskStatsLine() {
+  const stats = useAskStats().data;
+  if (!stats || stats.answered_from_data === 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      So far we've answered {stats.answered_from_data} of your {stats.questions} questions from your records, and{" "}
+      {stats.checked_first_try} passed our fact check first time.
+    </p>
   );
 }
 
@@ -300,6 +331,7 @@ function Block({ block }: { block: AskBlock }) {
       </ChartCard>
     );
   }
+  if (block.type === "passages") return <Passages block={block} />;
   if (block.rows.length === 0) return null;
   return (
     <figure aria-label={block.title} className="grid min-w-0 gap-2">
@@ -338,6 +370,40 @@ function Block({ block }: { block: AskBlock }) {
           </tbody>
         </table>
       </div>
+    </figure>
+  );
+}
+
+const HIDDEN = /(\[hidden [a-z ]+\])/;
+
+/** Passages found in the documents, each linked to its document. Personal details stay hidden here too. */
+function Passages({ block }: { block: AskPassagesBlock }) {
+  if (block.items.length === 0) return null;
+  return (
+    <figure aria-label={block.title} className="grid min-w-0 gap-2">
+      <figcaption className="text-sm font-medium">{block.title}</figcaption>
+      <ul className="grid gap-2">
+        {block.items.map((p) => (
+          <li key={p.document_id} className="grid gap-2 rounded-lg border p-3">
+            <blockquote className="break-words text-sm">
+              {p.text.split(HIDDEN).map((part, i) =>
+                i % 2 === 1 ? (
+                  <span key={i} className="rounded bg-muted px-1 text-xs text-muted-foreground">
+                    {part.slice(1, -1)}
+                  </span>
+                ) : (
+                  part
+                ),
+              )}
+            </blockquote>
+            <Link to={p.href} className="inline-flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline">
+              <FileTextIcon className="size-3.5" aria-hidden />
+              {p.label}, {p.kind} received {formatDate(p.date, true)}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">We search the text the AI was shown when we read each document, so personal and bank details stay hidden.</p>
     </figure>
   );
 }

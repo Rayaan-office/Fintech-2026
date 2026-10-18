@@ -16,7 +16,8 @@ from app.db import read_only_session, tenant_session
 from app.models import ChatMessage, Counterparty
 
 PLACEHOLDER = re.compile(r"\[[A-Z_]+_\d+\]")
-NONE = {"party": None, "amount": None, "date": None, "repeat": None, "period": None, "label": None}
+NONE = {"party": None, "amount": None, "date": None, "repeat": None, "period": None, "label": None, "kind": None,
+        "category": None, "from_date": None, "to_date": None, "group_by": None, "measure": None, "search": None}
 
 
 @pytest.fixture(scope="module")

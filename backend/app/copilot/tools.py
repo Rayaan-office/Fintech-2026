@@ -8,17 +8,21 @@ returns three things:
 Names in the facts are replaced with placeholders before the AI sees them (wording.prepare).
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from ..analytics import financing, forecast, health, ledger, rules
 from ..models import Recommendation, Record
+from ..privacy.detectors import detect
+from ..privacy.redact import restore
 from ..security.rbac import Perm
-from .wording import day, money
+from . import passages
+from .wording import Names, day, money
 
 MAX_MINOR = 100_000_000_00
 
@@ -220,6 +224,134 @@ def recommendations(db: Session, today: date, **_) -> Result:
                                "href": f"/recommendations?open={r.id}"} for r in recs])
 
 
+# Ask anything: our own query over an allowlist of record kinds and columns, and document search.
+# The AI only fills in the choices below; it never writes SQL.
+KINDS = {
+    "sales_invoices": ("Sales invoices", "invoices", and_(Record.kind == "invoice")),
+    "bills": ("Bills", "bills", and_(Record.kind == "bill")),
+    "money_in": ("Money in at the bank", "payments in", and_(Record.kind == "bank_txn", Record.direction == "in")),
+    "money_out": ("Money out at the bank", "payments out", and_(Record.kind == "bank_txn", Record.direction == "out")),
+    "fees": ("Payment platform fees", "fees", and_(Record.kind == "fee")),
+}
+_RECORD_LABEL = {"invoice": "Invoice", "bill": "Bill", "bank_txn": "Bank payment", "fee": "Fee"}
+MAX_ROWS = 24
+MAX_MONTHS = 24
+_CATEGORY = re.compile(r"^[A-Za-z][A-Za-z &/,'()-]{1,39}$")
+
+
+def known_categories(db: Session, names) -> list[str]:
+    """The categories in use, for the AI to pick from: plain words only, never a name or detail."""
+    rows = db.execute(select(Record.category).where(Record.category.is_not(None)).distinct()
+                      .order_by(Record.category).limit(60)).scalars().all()
+    cats = [c for c in rows if _CATEGORY.match(c) and names.hide(c) == c]
+    joined = "; ".join(cats)
+    hits = detect(joined, people=True)
+    out, pos = [], 0
+    for c in cats:
+        if not any(h.start < pos + len(c) and pos < h.end for h in hits):
+            out.append(c)
+        pos += len(c) + 2
+    return out
+
+
+def _span(today: date, start: date | None, end: date | None) -> tuple[date, date, bool]:
+    end = end or today
+    start = start or forecast.add_months(end.replace(day=1), -11)
+    start, end = min(start, end), max(start, end)
+    earliest = forecast.add_months(end, -MAX_MONTHS)
+    return max(start, earliest), end, start < earliest
+
+
+def query_records(db: Session, today: date, kind: str | None = None, party_id=None, category: str | None = None,
+                  from_date: date | None = None, to_date: date | None = None, group_by: str | None = None,
+                  measure: str | None = None, names=None, party_unknown: bool = False, **_) -> Result:
+    if party_unknown:
+        return Result({"records": "The supplier or customer asked about is not one we know, so nothing was counted."})
+    names = names or Names(db)
+    title, noun, where = KINDS.get(kind or "", KINDS["bills"])
+    group_by = group_by if group_by in ("month", "category", "party") else "none"
+    measure = measure if measure in ("total", "count", "average") else "total"
+    start, end, clipped = _span(today, from_date, to_date)
+    biz = ledger.business(db)
+    filters = [where, Record.status != "void", Record.currency == biz.currency, Record.date >= start,
+               Record.date <= end]
+    if party_id:
+        filters.append(Record.counterparty_id == party_id)
+    if category:
+        filters.append(func.lower(Record.category) == category.strip().lower()[:80])
+    total, count = db.execute(select(func.coalesce(func.sum(Record.amount_minor), 0), func.count(Record.id))
+                              .where(*filters)).one()
+    total = int(total)  # a sum of whole pence comes back as a Decimal
+    group = {"month": func.date_trunc("month", Record.date), "category": func.coalesce(Record.category, "uncategorised"),
+             "party": Record.counterparty_id, "none": None}[group_by]
+    rows: list = []
+    if group is not None:
+        amount, n = func.sum(Record.amount_minor), func.count(Record.id)
+        order = group if group_by == "month" else (n.desc() if measure == "count" else amount.desc())
+        rows = [(g, int(a), c) for g, a, c in db.execute(select(group, amount, n).where(*filters).group_by(group)
+                                                         .order_by(order).limit(MAX_ROWS + 1)).all()]
+
+    real_names = ledger.names(db) if group_by == "party" else {}
+
+    def label(g, real: bool) -> str:
+        if group_by == "month":
+            return f"{g:%B %Y}"
+        if group_by == "party":
+            return (real_names.get(g) if real else names.of(g)) or "No supplier or customer"
+        return str(g)
+
+    def line(lbl: str, amount: int, n: int) -> str:
+        if measure == "count":
+            return f"{lbl}: {n} {noun}"
+        if measure == "average":
+            return f"{lbl}: average {money(round(amount / n)) if n else money(0)} over {n} {noun}"
+        return f"{lbl}: {money(amount)} from {n} {noun}"
+
+    facts = {"what was counted": f"{title.lower()}" + (" (including VAT)" if kind in ("sales_invoices", "bills")
+                                                        else "") + " in the business currency",
+             "from": day(start), "to": day(end),
+             **({"limited to": f"the last {MAX_MONTHS} months"} if clipped else {}),
+             **({"supplier or customer": names.of(party_id) or "the one asked about"} if party_id else {}),
+             **({"category": category.strip()[:80]} if category else {}),
+             "all together": line("all together", total, count)}
+    by = {"party": "by supplier or customer"}.get(group_by, f"by {group_by}")
+    if rows:
+        facts[by] = [line(label(g, False), a, n) for g, a, n in rows[:MAX_ROWS]]
+        if len(rows) > MAX_ROWS:
+            facts["note"] = f"only the first {MAX_ROWS} groups are listed"
+    shown = rows[:MAX_ROWS] if rows else [("All", total, count)]
+    blocks = [{"type": "table", "title": title + (f" {by}" if rows else "")
+               + f", {_short(start)} {start:%Y} to {_short(end)} {end:%Y}",
+               "columns": [{"month": "Month", "category": "Category", "party": "Supplier or customer"}.get(group_by, ""),
+                           "Total", "Number", "Average"],
+               "rows": [[label(g, True) if rows else g, a, n, round(a / n) if n else 0] for g, a, n in shown],
+               "money_columns": [1, 3]}]
+    biggest = db.execute(select(Record).where(*filters).order_by(Record.amount_minor.desc()).limit(5)).scalars().all()
+    sources = [{"id": str(r.id), "kind": r.kind, "label": f"{_RECORD_LABEL.get(r.kind, 'Record')} "
+                f"{r.reference or day(r.date)}"[:80]} for r in biggest]
+    return Result(facts, blocks, sources)
+
+
+def search_documents(db: Session, today: date, search: str | None = None, party_id=None, names=None, **_) -> Result:
+    names = names or Names(db)
+    words = passages.search_words(search)
+    if not words:
+        return Result({"document search": "The question did not give any words to look for."})
+    found = passages.find(db, words, names, party_id=party_id)
+    facts = {"searched documents for": words, "documents found": len(found) or "none",
+             "passages (personal details are shown as [hidden ...])": [
+                 f"{(p.document.doc_type or 'document').replace('_', ' ')}"
+                 + (f" from {names.of(p.document.counterparty_id)}" if names.of(p.document.counterparty_id) else "")
+                 + f", received {day(p.document.created_at)}: \"{p.text}\"" for p in found] or "none"}
+    items = [{"document_id": str(p.document.id), "label": p.document.filename[:120],
+              "kind": (p.document.doc_type or "document").replace("_", " "),
+              "date": p.document.created_at.date().isoformat(), "text": restore(p.text, names.real),
+              "href": f"/documents?open={p.document.id}"} for p in found]
+    blocks = [{"type": "passages", "title": "From your documents", "items": items}] if items else []
+    sources = [{"id": i["document_id"], "kind": "document", "label": i["label"], "href": i["href"]} for i in items]
+    return Result(facts, blocks, sources)
+
+
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("cash_forecast", "cash today and the 90-day forecast, lowest point, upcoming payments, warnings",
          Perm.VIEW_ALL, cash_forecast),
@@ -235,4 +367,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("financing_options", "how to cover a shortfall: financing options, cost and readiness",
          Perm.USE_FINANCING, financing_options),
     Tool("recommendations", "things worth looking at that our checks found", Perm.VIEW_ALL, recommendations),
+    Tool("query_records", "totals, counts or averages from the records for questions the other tools don't cover: "
+         "kind (sales_invoices, bills, money_in, money_out, fees), optionally one party placeholder or one known "
+         "category, from_date and to_date (at most 24 months), group_by (month, category, party or none) and "
+         "measure (total, count or average)", Perm.VIEW_ALL, query_records),
+    Tool("search_documents", "what the bills, receipts and letters we have read say about something: give a few "
+         "search words, and optionally a party placeholder", Perm.REVIEW_DOCUMENTS, search_documents),
 ]}
