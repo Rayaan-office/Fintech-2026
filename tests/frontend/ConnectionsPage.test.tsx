@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Connection, Me } from "@/api/types";
+import { countsSummary } from "@/pages/ConnectionsPage";
 import { bookkeeper, owner } from "./fixtures";
 import { mockApi, renderApp } from "./utils";
 
@@ -121,5 +122,11 @@ describe("Connections", () => {
     expect(stripe).toHaveTextContent("Only a business owner or finance manager can connect or disconnect.");
     // Anyone who can see the books can still bring them up to date
     expect(within(await cardFor("Accounting software")).getByRole("button", { name: "Sync now" })).toBeEnabled();
+  });
+
+  // Regression: a sync that found one account said "Found 1 accounts"
+  it("says one of something in the singular", () => {
+    expect(countsSummary({ accounts: 1, added: 266 })).toBe("1 account, 266 added");
+    expect(countsSummary({ customers: 5, invoices: 1, carried_over: 2 })).toBe("5 customers, 1 invoice, 2 carried over");
   });
 });

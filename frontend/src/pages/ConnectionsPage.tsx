@@ -61,7 +61,8 @@ export function countsSummary(counts: Record<string, number> | null | undefined)
   const parts = Object.entries(counts)
     .filter(([, n]) => typeof n === "number" && n > 0)
     .slice(0, 4)
-    .map(([k, n]) => `${n.toLocaleString("en-GB")} ${k.replace(/_/g, " ")}`);
+    // "1 account", not "1 accounts"
+    .map(([k, n]) => `${n.toLocaleString("en-GB")} ${k.replace(/_/g, " ").replace(n === 1 ? /s$/ : /$^/, "")}`);
   return parts.length ? parts.join(", ") : null;
 }
 
