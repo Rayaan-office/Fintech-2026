@@ -8,7 +8,7 @@ Cocent is an AI finance assistant for small-business owners who don't have a fin
 
 > **Competition entry only.** Cocent is our entry to the 2026 Fintechathon International Track, Topic E: SME Finance Copilot. It is a prototype that runs on test (sandbox) services with made-up data. It is not a financial service, gives no financial advice, and is not for commercial use. It is licensed under [PolyForm Strict 1.0.0](LICENSE): you may use it for non-commercial purposes such as evaluating our entry, but not change it, share copies or use it commercially without our written permission.
 
-**[Watch the 5-minute demo](docs/video/cocent-demo.mp4)**
+**[Watch the 5-minute demo](docs/video/cocent-demo.mp4)** · **[See the pitch deck](docs/pitch/cocent-pitch-deck.pdf)**
 
 ![Cocent's home screen](docs/evidence/home.png)
 
@@ -43,6 +43,7 @@ Also: recommendations (price rises, slow payers, creeping costs), payment remind
 
 | I want to… | Open |
 |---|---|
+| See the pitch | [Pitch deck](docs/pitch/cocent-pitch-deck.pdf) · [Demo video](docs/video/cocent-demo.mp4) |
 | Run Cocent on my computer | [Run Cocent yourself](docs/setup/README.md) |
 | Set up the AI gateway, Stripe, Plaid, QuickBooks or the email inbox | [AI gateway](docs/setup/ai-gateway.md) · [Stripe](docs/setup/stripe.md) · [Plaid](docs/setup/plaid.md) · [QuickBooks](docs/setup/quickbooks.md) · [Email inbox](docs/setup/email.md) |
 | Fill it with demo data | [Demo data](docs/setup/demo-data.md) |
@@ -60,6 +61,7 @@ Also: recommendations (price rises, slow payers, creeping costs), payment remind
 | The competition asks for | Where it is |
 |---|---|
 | Technical documentation: architecture, core algorithms, security design | [Architecture](docs/ARCHITECTURE.md), [Core algorithms](docs/ALGORITHMS.md), [Security](docs/SECURITY.md) |
+| Presentation deck, for a talk of up to 10 minutes | [cocent-pitch-deck.pdf](docs/pitch/cocent-pitch-deck.pdf) (11 slides) |
 | Demo video, under 5 minutes | [cocent-demo.mp4](docs/video/cocent-demo.mp4) (4:44) |
 | Source code with README, deployment instructions and test cases | This repository, [Run Cocent yourself](docs/setup/README.md), [Testing](docs/TESTING.md) and [`tests/`](tests/README.md) |
 | Security self-assessment: approval levels and known risks | [Security self-assessment](docs/SELF-ASSESSMENT.md) |
@@ -72,7 +74,7 @@ Also: recommendations (price rises, slow payers, creeping costs), payment remind
 | `backend/` | The server: reading documents, connectors, forecasts, recommendations, approvals and the AI workflows |
 | `frontend/` | The app people use in the browser |
 | `tests/` | Every test, kept apart from the app code |
-| `docs/` | Documentation, diagrams, the demo video and evidence |
+| `docs/` | Documentation, diagrams, the pitch deck, the demo video and evidence |
 | `infra/` | Database setup for the local services |
 
 ## The name
