@@ -6,7 +6,7 @@
 
 Cocent is an AI finance assistant for small-business owners who don't have a finance team. It reads their bills, keeps an eye on their cash, warns them before money runs short and catches fake invoices. It never acts without a person's say-so.
 
-> **Competition entry only.** Cocent is our entry to the 2026 Fintechathon International Track, Topic E: SME Finance Copilot. It is a prototype that runs on test (sandbox) services with made-up data. It is not a financial service, gives no financial advice, and is not for commercial use. All rights reserved: see [LICENSE](LICENSE).
+> **Competition entry only.** Cocent is our entry to the 2026 Fintechathon International Track, Topic E: SME Finance Copilot. It is a prototype that runs on test (sandbox) services with made-up data. It is not a financial service, gives no financial advice, and is not for commercial use. It is licensed under [PolyForm Strict 1.0.0](LICENSE): you may use it for non-commercial purposes such as evaluating our entry, but not change it, share copies or use it commercially without our written permission.
 
 **[Watch the 5-minute demo](docs/video/cocent-demo.mp4)**
 
@@ -83,4 +83,4 @@ Also: recommendations (price rises, slow payers, creeping costs), payment remind
 
 ## Licence
 
-Copyright © 2026 the Cocent team. All rights reserved. You may view, run and evaluate this code to judge our competition entry; any other use, including commercial use, needs our written permission. See [LICENSE](LICENSE). Third-party components keep their own licences: see [Third-party services and attribution](docs/THIRD-PARTY.md).
+Copyright © 2026 the Cocent team. Cocent is licensed under the [PolyForm Strict License 1.0.0](LICENSE), a standard source-available licence. You may download, run and evaluate it for non-commercial purposes. You may not change it, share copies of it or use it commercially without our written permission. The licence grants no right to our name or logo. Third-party components keep their own licences: see [Third-party services and attribution](docs/THIRD-PARTY.md).

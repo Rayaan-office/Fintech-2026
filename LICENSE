@@ -1,59 +1,63 @@
-Cocent: Proprietary Licence (Evaluation Only)
+Required Notice: Copyright (c) 2026 The Cocent team. All rights not granted below are reserved.
 
-Copyright (c) 2026 The Cocent team. All rights reserved.
+Required Notice: Cocent is an entry to the 2026 Fintechathon International Track (Topic E: SME Finance Copilot). It is a prototype that runs on test (sandbox) services with made-up data. It is not a financial service, gives no financial advice, and must not be used with real money or real customer data. Commercial use needs the Cocent team's written permission. Third-party components keep their own licences, listed in docs/THIRD-PARTY.md.
 
-This repository contains our entry to the 2026 International Track of the Fintechathon
-competition (Topic E: SME Finance Copilot). We publish it so that the competition's
-organisers and judges can review, build and run it. Publishing it does not give away
-any of our rights.
+# PolyForm Strict License 1.0.0
 
-1. What you may do
+<https://polyformproject.org/licenses/strict/1.0.0>
 
-   You may view, download, build and run this software, and make copies for those
-   purposes only, solely to review, judge or evaluate our competition entry.
+## Acceptance
 
-2. What you may not do without our written permission
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-   a. Use the software, or any part of it, for any commercial purpose, including
-      offering it, or anything built from it, as a product or service.
-   b. Copy, change, translate or build on the software, except as needed in section 1.
-   c. Publish, share, sell, rent, sublicense or otherwise give the software, or any
-      part of it, to anyone else.
-   d. Use the name "Cocent", our logo or our tagline.
-   e. Remove or change this notice.
+## Copyright License
 
-   To ask for permission, open an issue on this repository or contact the team
-   through the competition organisers.
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose, other than distributing the software or making changes or new works based on the software.
 
-3. Ownership
+## Patent License
 
-   We, the Cocent team, keep all rights, title and interest in the software, its
-   design, documentation, demo video and branding. Nothing in this licence transfers
-   ownership or grants any right that it does not state.
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-4. Third-party components
+## Noncommercial Purposes
 
-   The software uses open-source libraries, tools and fonts, and connects to outside
-   services. Each stays under its own licence or terms, which take precedence for that
-   component. They are listed in docs/THIRD-PARTY.md. This licence covers only our own
-   work.
+Any noncommercial purpose is a permitted purpose.
 
-5. Not for real use
+## Personal Uses
 
-   The software is a competition prototype. It runs against test (sandbox) services
-   with made-up data. It is not a regulated financial service, does not give financial
-   advice, and must not be used with real money or real customer data.
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
 
-6. No warranty
+## Noncommercial Organizations
 
-   The software is provided "as is", without warranty of any kind, express or implied,
-   including fitness for a particular purpose and non-infringement. To the fullest
-   extent the law allows, we are not liable for any claim, damage or loss arising from
-   the software or its use.
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
 
-7. Ending this licence
+## Fair Use
 
-   If you break any of these terms, your permission ends at once, and you must stop
-   using the software and delete your copies.
+You may have "fair use" rights for the software under the law. These terms do not limit them.
 
-Hosting this repository on GitHub also means GitHub's own terms of service apply to it.
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.
