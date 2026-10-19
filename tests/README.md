@@ -1,5 +1,7 @@
 # Tests
 
+The latest results, and what the tests caught, are in [Testing](../docs/TESTING.md).
+
 All tests live here, outside the app code, so nothing test-related ships with a deploy.
 They use their own database (`copilot_test`), created automatically, so they never touch development data.
 

@@ -1,0 +1,59 @@
+Cocent: Proprietary Licence (Evaluation Only)
+
+Copyright (c) 2026 The Cocent team. All rights reserved.
+
+This repository contains our entry to the 2026 International Track of the Fintechathon
+competition (Topic E: SME Finance Copilot). We publish it so that the competition's
+organisers and judges can review, build and run it. Publishing it does not give away
+any of our rights.
+
+1. What you may do
+
+   You may view, download, build and run this software, and make copies for those
+   purposes only, solely to review, judge or evaluate our competition entry.
+
+2. What you may not do without our written permission
+
+   a. Use the software, or any part of it, for any commercial purpose, including
+      offering it, or anything built from it, as a product or service.
+   b. Copy, change, translate or build on the software, except as needed in section 1.
+   c. Publish, share, sell, rent, sublicense or otherwise give the software, or any
+      part of it, to anyone else.
+   d. Use the name "Cocent", our logo or our tagline.
+   e. Remove or change this notice.
+
+   To ask for permission, open an issue on this repository or contact the team
+   through the competition organisers.
+
+3. Ownership
+
+   We, the Cocent team, keep all rights, title and interest in the software, its
+   design, documentation, demo video and branding. Nothing in this licence transfers
+   ownership or grants any right that it does not state.
+
+4. Third-party components
+
+   The software uses open-source libraries, tools and fonts, and connects to outside
+   services. Each stays under its own licence or terms, which take precedence for that
+   component. They are listed in docs/THIRD-PARTY.md. This licence covers only our own
+   work.
+
+5. Not for real use
+
+   The software is a competition prototype. It runs against test (sandbox) services
+   with made-up data. It is not a regulated financial service, does not give financial
+   advice, and must not be used with real money or real customer data.
+
+6. No warranty
+
+   The software is provided "as is", without warranty of any kind, express or implied,
+   including fitness for a particular purpose and non-infringement. To the fullest
+   extent the law allows, we are not liable for any claim, damage or loss arising from
+   the software or its use.
+
+7. Ending this licence
+
+   If you break any of these terms, your permission ends at once, and you must stop
+   using the software and delete your copies.
+
+Hosting this repository on GitHub also means GitHub's own terms of service apply to it.

@@ -24,7 +24,7 @@ Owners of small businesses who don't have a finance team. They get paid through 
 
 ### 1. Bringing the data together
 - **Connections:** email inbox (required), payment platform, bank account and accounting software (optional).
-- **Manual input:** upload a PDF, image or spreadsheet, or take a photo of a receipt in the app.
+- **Manual input:** upload a PDF, image or spreadsheet, or take a photo of a receipt, also from a phone by scanning a QR code.
 - **Automatic reading:** bills, invoices, receipts and payment notices are read on arrival, with personal details hidden before the AI sees anything.
 - **Automatic matching:** payments are matched to invoices, payouts to bank deposits, and bills to bank payments.
 - **Review list:** a short list of items for a person to check, showing the original document next to what was extracted.
@@ -76,14 +76,20 @@ Each recommendation shows the numbers behind it and a suggested next step, such 
 
 ### 7. A clean, interactive app
 - **Calm screens:** one headline number, at most one main chart and a few cards per page, with detail one click away.
-- **Interaction that builds trust:** click any number to see its source document, see exactly what the AI saw, watch documents being processed live, and drag bills or planned costs on the forecast.
+- **Interaction that builds trust:** see each bill's original next to what we read, see exactly what the AI saw, watch documents being processed live, and move bills on the forecast to see the effect.
 - **Fast everyday use:** a Today briefing, an inbox for approvals with keyboard shortcuts, voice questions, phone-to-computer receipt handoff and a privacy mode that hides amounts.
 
 ### 8. Trust and control
 - **Approval levels:** the AI can read and suggest freely; money and outside actions need people (see [Security](SECURITY.md)).
 - **Pause AI switch:** the owner can stop all automatic AI actions at once.
 - **Permanent activity log** of every step.
-- **Every number traceable** to its original document.
+- **Every bill and receipt linked** to its original document.
+
+### 9. Getting paid and learning
+- **Reminders in three steps:** friendly, firm and a final notice, which only a business owner can approve. A card payment link can be added after approval.
+- **What paying costs:** which customers' payments arrive short or slowly, and what each way of paying costs.
+- **Learning from decisions:** after two matching corrections, Cocent fills the value in next time (marked, with Undo), and recommendations people act on rise to the top. Bank details, contacts and amounts are never learned.
+- **Search everything** (Ctrl or ⌘ K) and keyboard shortcuts.
 
 ## In our demo
 
@@ -93,6 +99,6 @@ Every service runs in a safe test mode with fake money and data.
 |---|---|
 | Email inbox | Mailpit (test inbox) |
 | Payment platform | Stripe sandbox (UK, GBP) |
-| Bank account | Plaid sandbox, UK test bank (statement upload also supported) |
+| Bank account | Plaid sandbox, UK test bank |
 | Accounting software | QuickBooks Online sandbox company (UK, GBP) |
-| AI model | Any model on OpenRouter, limited to providers that don't keep or train on our data |
+| AI models | Two different models through OpenRouter, limited to providers that don't keep or train on our data |

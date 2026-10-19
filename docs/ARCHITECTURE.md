@@ -16,9 +16,9 @@ Our app connects to **types** of tools, not to one brand. Each type has a connec
 |---|---|---|---|---|
 | Email inbox | Required | Bills, receipts, payment notices | Gmail, Outlook, any IMAP mailbox | Mailpit test inbox |
 | Payment platform | Optional | Money customers paid | Stripe, PayPal, Square | Stripe sandbox (UK, GBP) |
-| Bank account | Optional | Money in and out of the bank | A live bank connection such as Plaid, or a statement file (CSV/OFX) | Plaid sandbox (UK test bank), read on a schedule; statement upload also supported |
+| Bank account | Optional | Money in and out of the bank | A live bank connection such as Plaid | Plaid sandbox (UK test bank), read on a schedule |
 | Accounting software | Optional | The official books | QuickBooks, Xero | QuickBooks sandbox company (UK), read on a schedule |
-| Upload or photo | Always available | Any PDF, image or spreadsheet; a photo taken in the app | — | Built in |
+| Upload or photo | Always available | Any PDF, image or spreadsheet; a phone photo, also sent from a phone by QR code | — | Built in |
 
 **How email arrives.**
 - **Demo:** Mailpit tells our app the moment each email arrives.
@@ -58,7 +58,6 @@ Anyone with permission can compare any extracted record with its original docume
 
 - **Original kept safe:** every original document and email is kept unchanged in an encrypted archive. This is our master copy.
 - **Copy in the books:** approved bills and receipts are also attached in the accounting software.
-- **Optional Google Drive copy:** a tidy folder copy, for example `Company / 2026 / October / Bills`. We can only see the files we put there.
 - **Side-by-side view:** the original sits next to what we extracted, with each value highlighted where it was found.
 - **Corrections kept:** every human correction is saved alongside the AI's original answer.
 
@@ -71,13 +70,13 @@ Anyone with permission can compare any extracted record with its original docume
 | AI workflow | LangGraph (the three workflows above) |
 | AI model | Not tied to one model. All requests go through OpenRouter, limited to providers that don't keep or train on our data. A second, different model gives the independent opinion. |
 | Reading documents | PyMuPDF, Tesseract OCR, Microsoft Presidio (personal-detail detection) |
-| In-app scanner | Phone camera in the browser, jscanify (page detection and straightening) |
+| Phone photos | The phone's camera through the browser, sent to the computer by QR code |
 | Analysis and recommendations | pandas and numpy (calculations), RapidFuzz (comparing names, addresses and bill lines), phonenumbers (standard phone format) |
 | Scheduled checks | APScheduler inside the API (bank reads every 15 minutes, accounting change feed every 10 minutes; daily recommendations run) |
 | Charts | Recharts |
 | Lender pack | ReportLab (PDF) |
 | Security | argon2-cffi (password storage), pyotp (two-step sign-in), python-magic (checking file types by content), pip-audit and npm audit (dependency scanning) |
-| Storage | Postgres database (including the business profile and financing catalog), MinIO encrypted file archive |
+| Storage | Postgres database (including the business profile and financing catalog), SeaweedFS (S3-compatible) for the encrypted file archive |
 
 ## Key terms
 
