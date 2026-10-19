@@ -1,6 +1,6 @@
 """Money that will never arrive was counted as on its way.
 
-The drafted connector recorded failed or cancelled payouts as "pending", and invoices Stripe
+Our first connector recorded failed or cancelled payouts as "pending", and invoices Stripe
 marks uncollectible (written off) as "open", so the cash forecast would have expected both.
 """
 

@@ -16,7 +16,7 @@ Our app handles a business's most sensitive information: bills, bank details, cu
 - **Each business's data is walled off** from every other business at the database level.
 - **Passwords and connection keys** are encrypted, stay on the server and are never shown to the AI.
 - **Our own logs** never contain document text. They hold only placeholders and fingerprints.
-- **All traffic is encrypted** in transit.
+- **Traffic is encrypted:** every call to an outside service uses HTTPS, and in production the app itself is served over HTTPS only.
 
 ## Keeping the AI safe
 
@@ -32,7 +32,7 @@ Our app handles a business's most sensitive information: bills, bank details, cu
 
 ### Second checks at the AI gateway
 
-Every request also passes OpenRouter's guardrails before it reaches any AI provider. These are a second safety net behind our own checks:
+In our demo, every request also passes OpenRouter's guardrails before it reaches any AI provider. These are a second safety net behind our own checks:
 
 | Check | What it does | If it triggers |
 |---|---|---|
@@ -51,9 +51,11 @@ Every request also passes OpenRouter's guardrails before it reaches any AI provi
 | 0 · Read | Look at records, forecast, analyse, explain, warn | Automatic |
 | 1 · Suggest | Draft a bill, suggest a match, raise a recommendation, draft a reminder | Automatic; waits in the review list |
 | 2 · Small change | Accept a match, record a known monthly bill | Automatic only if small, confident, from a known supplier and with no warnings; otherwise one person. Can be undone. |
-| 3 · Outside action | Update the accounting software, email a customer, schedule a payment, share a lender pack | One person |
-| 4 · High risk | Supplier bank-detail change, large or first-time payment | Two different people |
+| 3 · Outside action | Update the accounting software, email a customer or supplier, share a lender pack | One person; a final payment notice and the lender pack need a business owner |
+| 4 · High risk | Change a supplier's bank details | Two different people |
 | Never | Manage users, change limits, see hidden personal details, move real money | Not available to the AI |
+
+Cocent does not pay suppliers in this prototype. The levels for it are already in our code, ready for when it does: one person, or two people for a large or first-time payment, within each finance manager's limit.
 
 ### People and what they can do
 
@@ -62,11 +64,11 @@ Our roles are the essential jobs found in small-business finance, based on the u
 | Role | Who this is | Can | Cannot |
 |---|---|---|---|
 | Business owner | The owner or a director. There may be more than one. | Everything: add users, set approval limits, connect tools, approve any action, edit the business profile, share a lender pack | — |
-| Finance manager | A financial controller or office manager who runs day-to-day money, found in larger small businesses | Connect tools, approve payments up to their limit, approve bank-detail changes as one of two people, use financing tools | Add users or change limits |
-| Bookkeeper | Keeps the books day to day, often part-time or outsourced. Also handles supplier bills and chases customers for payment. | Check and correct extracted documents, approve matches, record bills, reconcile the bank, prepare supplier payments for approval, send payment reminders to customers, see all records, originals and recommendations | Approve payments, approve bank-detail changes, share a lender pack |
+| Finance manager | A financial controller or office manager who runs day-to-day money, found in larger small businesses | Connect tools, record bank charges, approve bank-detail changes as one of two people, use financing tools | Add users, change limits, approve a final payment notice, share a lender pack |
+| Bookkeeper | Keeps the books day to day, often part-time or outsourced. Also handles supplier bills and chases customers for payment. | Check and correct extracted documents, approve matches, record bills, send payment reminders and supplier emails, see all records, originals and recommendations | Approve bank-detail changes, record bank charges, connect tools, share a lender pack |
 | Employee | Any staff member with work expenses | Send in receipts by photo or upload, and see their own submissions | See anything else |
 
-**Two-person approval** (level 4) needs two different people from business owner and finance manager. If the business has only one of these, the owner names a trusted second approver who can approve level 4 actions only.
+**Two-person approval** (level 4) needs two different people, each a business owner or finance manager. A business with only one such person would name a trusted second approver; our server already accepts one, and the page to name them is on our list (see the [self-assessment](SELF-ASSESSMENT.md)).
 
 ### How the levels are enforced
 
@@ -82,8 +84,8 @@ Our roles are the essential jobs found in small-business finance, based on the u
 | Type | Access we take | How we trust what arrives |
 |---|---|---|
 | Email inbox | A dedicated bills inbox, never the owner's personal mailbox | Each email is processed once (tracked by its unique message ID). We check the sender's signature ourselves and trust only our own mail server's SPF, DKIM and DMARC verdict. Spoofed senders, automatic replies and mail loops are refused, and the owner is told. |
-| Payment platform | A read-only key. Our demo accepts only a sandbox key and refuses live-mode data. | Notifications must carry a valid signature less than five minutes old, and each is handled once. A notification only tells us to look: we read the latest from the platform ourselves and check every record against a fixed format. |
-| Bank account | Read-only transaction access through Plaid (Transactions only, the least data), or a statement file | Plaid access tokens are encrypted and never leave the server |
+| Payment platform | A read-only key, plus an optional second key that can only create card payment links. Our demo accepts only sandbox keys and refuses live-mode data. | Notifications must carry a valid signature less than five minutes old, and each is handled once. A notification only tells us to look: we read the latest from the platform ourselves and check every record against a fixed format. |
+| Bank account | Read-only transaction access through Plaid (Transactions only, the least data) | Plaid access tokens are encrypted and never leave the server |
 | Accounting software | Accounting data only; writes only after approval, each with a request id so a retry can't repeat it | Sign-in link tied to the browser that started it; notifications must carry a valid signature |
 
 Unsigned or wrongly signed notifications are rejected.
@@ -110,7 +112,7 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 |---|---|
 | LLM01 Prompt injection | The document-reading AI cannot act and only fills in a fixed form; document text is marked as data; the gateway blocks known injection phrases; every figure is checked against the source |
 | LLM02 Sensitive information disclosure | Personal details are replaced before sending, a final scan checks again, the gateway blocks any bank or tax detail that slips through, and providers keep nothing |
-| LLM03 Supply chain | Library versions are pinned and scanned for known weaknesses (pip-audit, npm audit); only allowed models can be used |
+| LLM03 Supply chain | Library versions are locked and scanned for known weaknesses (pip-audit, npm audit); only allowed models can be used |
 | LLM05 Improper output handling | AI answers must match a fixed format, are shown as plain text, and never feed database queries or web addresses |
 | LLM06 Excessive agency | Approval levels, read-only tools, and the AI never has more access than the person using it |
 | LLM07 System prompt leakage | Our instructions to the AI hold no secrets; security is enforced in our code |
@@ -126,7 +128,7 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | ASI03 Identity and privilege abuse | The server checks each user's role, the AI acts only as the signed-in user, and connection keys never reach the AI |
 | ASI04 Agentic supply chain | Models are pinned to exact versions on an allowlist; our instructions to the AI are versioned in our code; no third-party plugins or tool servers are loaded while the app runs |
 | ASI05 Unexpected code execution | The AI never writes or runs code. Uploaded files are checked by their content (not their name), limited in size and pages, and opened in a separate worker with a time limit. Spreadsheets with macros are rejected. |
-| ASI06 Memory and context poisoning | The AI keeps no long-term memory; chat history belongs to one user; the recommendations agent reads only checked records, never raw documents |
+| ASI06 Memory and context poisoning | The AI keeps no long-term memory. What Cocent learns from people's corrections is kept by our code, only after two matching corrections on approved bills, and never includes bank details, contacts or amounts. Chat history belongs to one user; the recommendations agent reads only checked records, never raw documents |
 | ASI08 Cascading failures | Limited retries, a work queue that resumes after outages, and failures sent to a person |
 | ASI09 Human-agent trust exploitation | Confirmation cards show exactly what will change; AI text is labelled and linked to its evidence; risky actions need two people |
 | ASI10 Rogue agents | Every AI step is in the tamper-evident log, and the Pause AI switch stops all automatic actions at once |
@@ -137,16 +139,16 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 |---|---|
 | A01 Broken access control, API1 Object-level and API5 Function-level authorization | Every request is checked on the server for the user's business and role, for each record and each action. Record IDs are random, and our tests try to open another business's records. |
 | API3 Object property-level authorization | Fixed input and output formats for every request, so nobody can change or see a field they aren't allowed to, such as marking their own payment as approved |
-| A02 Security misconfiguration, API8 | HTTPS only, strict browser security headers (including a content security policy), access only from our own app's web address, debug mode off, and error pages that reveal nothing internal |
-| A03 Software supply chain failures | Locked dependency versions, automatic scanning (pip-audit, npm audit) and update alerts |
+| A02 Security misconfiguration, API8 | HTTPS in production, strict browser security headers (including a content security policy), access only from our own app's web address, debug mode off, and error pages that reveal nothing internal |
+| A03 Software supply chain failures | Locked dependency versions and scanning for known weaknesses (pip-audit, npm audit) |
 | A04 Cryptographic failures | Encrypted traffic, encrypted personal-detail store and file archive, and keys kept in environment secrets, never in code |
 | A05 Injection | Database access only through safe, parameterised queries; no system commands built from user input; spreadsheet exports neutralise cells starting with `=`, `+`, `-` or `@` so they can't run formulas |
-| A07 Authentication failures, API2 | Passwords stored with Argon2, sign-in attempts limited, secure session cookies that expire when idle, and two-step sign-in (authenticator app) for business owners and finance managers, who can approve payments |
+| A07 Authentication failures, API2 | Passwords stored with Argon2, sign-in attempts limited, secure session cookies that expire when idle, and two-step sign-in (authenticator app) for business owners and finance managers, who approve the riskiest changes |
 | A08 Software or data integrity failures | Signed notifications from outside services, file fingerprints and the tamper-evident log |
-| A09 Security logging and alerting failures | Failed sign-ins, refused actions and gateway blocks are logged, and repeated ones alert the business owner |
+| A09 Security logging and alerting failures | Failed sign-ins, refused approvals and gateway blocks are logged; repeated failed sign-ins lock the account and notify the business |
 | A10 Mishandling of exceptional conditions | Every security check fails closed: if a check errors, the action is refused. Every outside call has a time limit. |
 | API4 Unrestricted resource consumption | Limits on upload size, pages per document, requests per user and results per page |
-| API6 Unrestricted access to sensitive business flows | Payments and bank-detail changes always need approval and are rate-limited |
+| API6 Unrestricted access to sensitive business flows | Bank-detail changes and every outside action always need approval; requests are rate-limited per person |
 | API7 Server-side request forgery | Our server only contacts a fixed list of services. It never opens web addresses found in documents or emails. |
 | API9 Improper inventory management | One documented API version; its developer documentation page is switched off outside development |
 | API10 Unsafe consumption of APIs | Data from the payment platform, bank and accounting software is checked against fixed formats like any other input, with time limits on every call |
@@ -158,9 +160,9 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | A personal detail is missed | It reaches the AI provider | Two-stage detection, final scan before sending, a second check at the gateway, and providers that keep nothing | Unusual formats may slip through; we test against a sample set |
 | The AI misreads a document | Wrong amount or date in the books | Automatic checks, second AI opinion, review by a person | Errors that still look correct; we spot-check samples |
 | Hidden instructions in a document | The AI is manipulated | The reading AI cannot act; fixed form; known injection phrases blocked at the gateway; every figure checked against the source | A wrong form answer, caught by the checks |
-| Fake invoice or changed bank details | Money paid to a fraudster | Fraud warnings; two-person approval for bank changes and large payments | A well-crafted fraud from a real supplier's hacked email |
+| Fake invoice or changed bank details | Money paid to a fraudster | Fraud warnings; two-person approval for bank changes | A well-crafted fraud from a real supplier's hacked email |
 | Forged notification | Fake payment recorded | Signature check on every notification | — |
-| Stolen connection key | Data read by an attacker | Read-only keys, encrypted storage, regular rotation | Read exposure until the key is revoked |
+| Stolen connection key | Data read by an attacker | Read-only keys, encrypted storage, never shown to the AI | Read exposure until the key is revoked |
 | Someone else sees a phone upload link | They send files to the business | The QR code's link is long and random, stored only as a fingerprint, works for 10 minutes and up to 10 files, and only adds documents: each file gets the same safety checks, is logged, and still needs approval like any upload | Unwanted files until the link expires |
 | Staff misuse | Unauthorised changes | Roles, approval levels, two-person rule, permanent log | Collusion between two approvers |
 | One business sees another's data | Data leak | Database-level separation | — |
@@ -169,11 +171,9 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | Inaccurate forecast | Poor decision by the owner | Best and worst case shown, reasons explained, shown as information rather than advice | Unexpected events can't be forecast |
 | Too many items to review | People approve without looking | High confidence thresholds, most important items first | Depends on people |
 | Duplicate or replayed email | Bill recorded twice | Message ID tracking and duplicate-file fingerprint | — |
-| Optional Google Drive copy edited | Copy no longer matches | The encrypted archive is the master; fingerprints reveal changes | — |
 
 ## Compliance
 
 - **Data minimisation:** we collect only what is needed, and the AI sees even less.
 - **No personal financial advice:** financing options, readiness checks and recommendations are presented as information.
 - **Test environment only:** our demo uses test services and fake money; no real payments are possible.
-- **Deletion on request:** a business's data can be fully deleted.

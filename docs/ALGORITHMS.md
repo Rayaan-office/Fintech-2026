@@ -64,7 +64,7 @@ We build the forecast day by day for the next 90 days from these ingredients:
 
 1. **Cash today** across all connected accounts.
 2. **Money expected in:** each unpaid invoice is placed on the day the customer is likely to pay, based on how late that customer has paid before.
-3. **Money going out:** bills on their due dates, plus scheduled payments.
+3. **Money going out:** bills on their due dates.
 4. **Repeating items:** rent, salaries and subscriptions, spotted because the same party is paid a similar amount at a regular interval. Regular customers and suppliers are spotted from how often they are invoiced or billed, which is steadier than when they pay; their next invoices and bills are placed after their usual payment delay.
 5. **VAT:** when the bank doesn't yet show a regular VAT payment, we estimate the next one from the VAT on that quarter's invoices, bills and card sales.
 6. **Everyday pattern:** the typical net in or out for each day of the week, covering everything not listed above.

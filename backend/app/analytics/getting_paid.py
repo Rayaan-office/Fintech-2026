@@ -14,7 +14,7 @@ with too few card payments of its own we use a stated typical rate instead.
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -249,8 +249,13 @@ def sent(db: Session, record_ids) -> dict:
     if record_ids:
         for rid, stage, at in db.execute(select(Reminder.record_id, Reminder.stage, Reminder.sent_at)
                                          .where(Reminder.record_id.in_(record_ids))).all():
-            out[rid][stage] = at.date()
+            out[rid][stage] = sent_day(at)
     return out
+
+
+def sent_day(at: datetime) -> date:
+    """The day a reminder went out, on the same calendar as date.today(), not in UTC."""
+    return at.astimezone().date()
 
 
 def next_stage(due: date, done: dict) -> tuple[int, date] | None:

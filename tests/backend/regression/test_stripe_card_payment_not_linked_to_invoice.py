@@ -1,6 +1,6 @@
 """Card payments for Stripe invoices were never linked to the invoice, and invoice VAT was lost.
 
-The drafted connector read charge.invoice and invoice.tax. Stripe removed both from its API
+Our first connector read charge.invoice and invoice.tax. Stripe removed both from its API
 (we now pin 2026-09-30); the link is in Stripe's invoice payments, and VAT is in total_taxes.
 So matching never saw which invoice a card payment paid.
 """
