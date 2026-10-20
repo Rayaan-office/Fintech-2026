@@ -21,7 +21,7 @@ Leave the other Plaid lines as they are (`PLAID_ENV=sandbox`, `PLAID_PRODUCTS=tr
 
 In the app, signed in as the owner, open **Connections** and press **Connect** on the bank card.
 
-Cocent creates a test bank login at Plaid, filled with our demo bakery's six months of bank transactions (266 of them), so the bank feed matches the books and the card sales. Plaid sends the last 30 days at once and the rest a few seconds later.
+Cocent creates a test bank login at Plaid, filled with our demo bakery's six months of bank transactions (about 280), so the bank feed matches the books and the card sales. Plaid sends the last 30 days at once and the rest a few seconds later.
 
 ## How it keeps up to date
 

@@ -1,10 +1,10 @@
 %%{init: {"flowchart": {"wrappingWidth": 260}}}%%
 flowchart TD
   T(["New data arrives,<br/>or the daily check runs"])
-  F["<b>Our code finds the facts</b><br/>fixed rules: supplier details changed,<br/>price rise, slow-paying customer,<br/>spending creep, reliance on one customer"]
+  F["<b>Our code finds the facts</b><br/>fixed rules: supplier details changed,<br/>price rise, slow-paying customer,<br/>spending creep, reliance on one customer,<br/>customers to remind, what getting paid costs"]
   R["<b>Rank and remove repeats</b><br/>by money at stake and urgency;<br/>skip muted kinds; resolve what no longer holds"]
   ANY{"<b>Anything new<br/>or worse?</b>"}
-  END(["Nothing new to show"])
+  END(["Nothing new to show;<br/>what no longer holds is marked resolved"])
   W["<b>AI writes the recommendation</b><br/>from the facts only,<br/>names hidden as placeholders"]
   V{"<b>Fact check</b><br/>do the figures match the facts?"}
   TPL["<b>Use our plain template</b><br/>if a rewrite is still wrong,<br/>or AI is paused"]

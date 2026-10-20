@@ -52,7 +52,7 @@ Open `.env` in a text editor. Every line says what it is for.
   | Payment platform (Stripe) | Full setup | [Stripe](stripe.md) |
   | Bank (Plaid) | Full setup | [Plaid](plaid.md) |
   | Accounting software (QuickBooks) | Full setup | [QuickBooks](quickbooks.md) |
-  | Email inbox (Mailpit) | Both ways, nothing to sign up for | [Email inbox](email.md) |
+  | Email inbox (Mailpit) | Full setup (the demo emails go to the full setup's bills inbox), nothing to sign up for | [Email inbox](email.md) |
 
 - **For the quick look**, put `unused` in the Stripe, Plaid and QuickBooks key lines. The app starts without them, and those connections stay switched off.
 

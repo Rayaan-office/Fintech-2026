@@ -22,14 +22,14 @@ Our app connects to **types** of tools, not to one brand. Each type has a connec
 
 **How email arrives.**
 - **Demo:** Mailpit tells our app the moment each email arrives.
-- **Production:** the business forwards bills to a dedicated inbox, which we read over IMAP (the standard way to read any mailbox) and which tells us as soon as new mail arrives.
+- **Production:** the business would forward bills to a dedicated inbox, read over IMAP (the standard way to read any mailbox). The demo inbox and a real one feed the same intake step.
 - **Either way:** each email is processed only once, tracked by its unique message ID.
 
 ## How a document is processed
 
 ![How a document is processed](diagrams/ingestion-graph.png)
 
-1. **Safety check.** We confirm the document really came from the connected source, check it isn't a duplicate, and check the file is safe to open.
+1. **Safety check.** We confirm the document really came from the connected source and check the file is safe to open. An unsafe file is refused.
 2. **Locked archive.** We store the original exactly as received.
 3. **Read the text.** Our own server reads the words from the PDF or photo. No AI is involved yet.
 4. **Hide personal details.** Names, bank and card numbers and similar details are swapped for placeholders such as `[BANK_ACCOUNT_1]`.
@@ -37,14 +37,16 @@ Our app connects to **types** of tools, not to one brand. Each type has a connec
 6. **AI fills in a form.** The AI records who, what, how much and when. It cannot take any action.
 7. **Do the numbers add up?** Our code checks the totals and that every figure appears in the document.
 8. **Try again.** We retry once, then a second AI gives an independent opinion. If the two disagree, a person decides.
-9. **Match it.** We link the document to its payment or bank record. If we are not sure, a person decides.
-10. **Update the books.** Once approved, the entry goes into the accounting software with the original attached.
+9. **Fraud check.** We compare the bill with what we know about the supplier: changed bank details, a look-alike sender, failed sender checks, a duplicate invoice, an unusual amount or pressure to pay fast. Any warning sends it to a person.
+10. **Match it.** We link the document to its payment or bank record. If we are not sure, a person decides.
+11. **Record it.** A person approves it. A bill from a known supplier, with no warnings and under the business's approval limit, is recorded automatically and can be undone.
+12. **Update the books.** Adding a bill to the accounting software, with the original attached, is a separate outside action that needs its own approval.
 
 ## How the assistant answers a question
 
 ![How the assistant answers](diagrams/copilot-graph.png)
 
-The assistant answers questions about the business, such as how it is doing, what cash flow looks like, or who pays late. It looks up facts from our records, never from raw documents, and fact-checks its numbers before answering. It can suggest actions, but anything that matters waits for a person's approval (see [Security](SECURITY.md)).
+The assistant answers questions about the business, such as how it is doing, what cash flow looks like, or who pays late. It looks up facts from our records, or searches document text with personal details hidden, and fact-checks its numbers before answering. It can suggest actions, but anything that matters waits for a person's approval (see [Security](SECURITY.md)).
 
 ## How recommendations are made
 
@@ -57,7 +59,7 @@ A recommendations agent reviews the business's records whenever new data arrives
 Anyone with permission can compare any extracted record with its original document.
 
 - **Original kept safe:** every original document and email is kept unchanged in an encrypted archive. This is our master copy.
-- **Copy in the books:** approved bills and receipts are also attached in the accounting software.
+- **Copy in the books:** bills added to the accounting software carry the original document.
 - **Side-by-side view:** the original sits next to what we extracted, with each value highlighted where it was found.
 - **Corrections kept:** every human correction is saved alongside the AI's original answer.
 
@@ -69,14 +71,15 @@ Anyone with permission can compare any extracted record with its original docume
 | Server | Python, FastAPI |
 | AI workflow | LangGraph (the three workflows above) |
 | AI model | Not tied to one model. All requests go through OpenRouter, limited to providers that don't keep or train on our data. A second, different model gives the independent opinion. |
-| Reading documents | PyMuPDF, Tesseract OCR, Microsoft Presidio (personal-detail detection) |
-| Phone photos | The phone's camera through the browser, sent to the computer by QR code |
-| Analysis and recommendations | pandas and numpy (calculations), RapidFuzz (comparing names, addresses and bill lines), phonenumbers (standard phone format) |
+| Reading documents | PyMuPDF, Tesseract OCR, openpyxl (spreadsheets), Microsoft Presidio with spaCy (personal-detail detection) |
+| Phone photos | A QR code opens an upload page on the phone, which sends the photo straight to our server |
+| Analysis and recommendations | RapidFuzz (comparing names, addresses and bill lines), phonenumbers (standard phone format) |
 | Scheduled checks | APScheduler inside the API (bank reads every 15 minutes, accounting change feed every 10 minutes; daily recommendations run) |
 | Charts | Recharts |
 | Lender pack | ReportLab (PDF) |
-| Security | argon2-cffi (password storage), pyotp (two-step sign-in), python-magic (checking file types by content), pip-audit and npm audit (dependency scanning) |
-| Storage | Postgres database (including the business profile and financing catalog), SeaweedFS (S3-compatible) for the encrypted file archive |
+| Security | argon2-cffi (password storage), pyotp (two-step sign-in), cryptography (encryption), dkimpy (email sender checks), python-magic (checking file types by content), pip-audit and npm audit (dependency scanning) |
+| Storage | Postgres database (including the business profile), a sample financing catalog file, SeaweedFS (S3-compatible, through boto3) for the encrypted file archive |
+| Live updates | Server-sent events (sse-starlette) |
 
 ## Key terms
 

@@ -14,7 +14,7 @@ Our app handles a business's most sensitive information: bills, bank details, cu
 - **Personal details** (names, bank and card numbers, tax IDs, contact details) are replaced before the AI step and kept in a separate encrypted store with its own database account.
 - **Original documents** are stored unchanged in an encrypted archive. Each carries a digital fingerprint (SHA-256), so any change is detected.
 - **Each business's data is walled off** from every other business at the database level.
-- **Passwords and connection keys** are encrypted, stay on the server and are never shown to the AI.
+- **Passwords** are stored only as Argon2 hashes. **Connection keys** and two-step sign-in secrets are encrypted (AES-256-GCM, a separate key for each purpose). Both stay on the server and are never shown to the AI.
 - **Our own logs** never contain document text. They hold only placeholders and fingerprints.
 - **Traffic is encrypted:** every call to an outside service uses HTTPS, and in production the app itself is served over HTTPS only.
 
@@ -32,13 +32,13 @@ Our app handles a business's most sensitive information: bills, bank details, cu
 
 ### Second checks at the AI gateway
 
-In our demo, every request also passes OpenRouter's guardrails before it reaches any AI provider. These are a second safety net behind our own checks:
+In our demo we also switched on OpenRouter's guardrails, a setting on the OpenRouter account (see the [AI gateway setup](setup/ai-gateway.md)). Every request then passes them before it reaches any AI provider. They are a second safety net behind our own checks:
 
 | Check | What it does | If it triggers |
 |---|---|---|
 | Hidden instructions | Scans every message for known prompt-injection phrases, based on OWASP patterns | The request is blocked and the document goes to a person, marked "possible hidden instructions" |
-| Bank and tax details | Looks for card numbers, IBANs, sort codes, account numbers, National Insurance and VAT numbers, email addresses and secret keys | The request is blocked. Because our own redaction should already have removed these, we log it as a near miss and send the item to a person. |
-| Lower-risk details | Looks for phone numbers, postcodes and IP addresses | The detail is replaced with a label. If a label appears in an answer, we log it and send the item for review. |
+| Bank and tax details | Looks for card numbers, IBANs, sort codes, account numbers, National Insurance and VAT numbers, email addresses and secret keys | The request is blocked. Because our own redaction should already have removed these, the block is logged and the item goes to a person. |
+| Lower-risk details | Looks for phone numbers, postcodes and IP addresses | The detail is replaced with a label. If a label appears in an answer, the answer fails our checks and is retried or sent to a person. |
 | Allowed models and providers | Only our chosen models, and only providers that keep nothing | Any other request is refused |
 | Spending cap | A daily budget for all AI use | Requests stop until the next day |
 
@@ -50,12 +50,12 @@ In our demo, every request also passes OpenRouter's guardrails before it reaches
 |---|---|---|
 | 0 · Read | Look at records, forecast, analyse, explain, warn | Automatic |
 | 1 · Suggest | Draft a bill, suggest a match, raise a recommendation, draft a reminder | Automatic; waits in the review list |
-| 2 · Small change | Accept a match, record a known monthly bill | Automatic only if small, confident, from a known supplier and with no warnings; otherwise one person. Can be undone. |
+| 2 · Small change | Accept a match, record a checked bill, record a bank charge | A bill is automatic only if small, confident, from a known supplier and with no warnings; otherwise one person. A bank charge needs a finance manager or owner. Can be undone. |
 | 3 · Outside action | Update the accounting software, email a customer or supplier, share a lender pack | One person; a final payment notice and the lender pack need a business owner |
 | 4 · High risk | Change a supplier's bank details | Two different people |
 | Never | Manage users, change limits, see hidden personal details, move real money | Not available to the AI |
 
-Cocent does not pay suppliers in this prototype. The levels for it are already in our code, ready for when it does: one person, or two people for a large or first-time payment, within each finance manager's limit.
+Cocent does not pay suppliers or move money in this prototype.
 
 ### People and what they can do
 
@@ -63,19 +63,20 @@ Our roles are the essential jobs found in small-business finance, based on the u
 
 | Role | Who this is | Can | Cannot |
 |---|---|---|---|
-| Business owner | The owner or a director. There may be more than one. | Everything: add users, set approval limits, connect tools, approve any action, edit the business profile, share a lender pack | — |
-| Finance manager | A financial controller or office manager who runs day-to-day money, found in larger small businesses | Connect tools, record bank charges, approve bank-detail changes as one of two people, use financing tools | Add users, change limits, approve a final payment notice, share a lender pack |
-| Bookkeeper | Keeps the books day to day, often part-time or outsourced. Also handles supplier bills and chases customers for payment. | Check and correct extracted documents, approve matches, record bills, send payment reminders and supplier emails, see all records, originals and recommendations | Approve bank-detail changes, record bank charges, connect tools, share a lender pack |
+| Business owner | The owner or a director. There may be more than one. | Everything: set the cash safety level, pause the AI, connect tools, approve any action, edit the business profile, share a lender pack | — |
+| Finance manager | A financial controller or office manager who runs day-to-day money, found in larger small businesses | Connect tools, record bank charges, approve bank-detail changes as one of two people, use financing tools | Change the cash safety level, pause the AI, approve a final payment notice, share a lender pack |
+| Bookkeeper | Keeps the books day to day, often part-time or outsourced. Also handles supplier bills and chases customers for payment. | Check and correct extracted documents, approve matches, record bills, send payment reminders and supplier emails, see all records, originals and recommendations | Approve bank-detail changes, record bank charges, approve a final payment notice, use financing tools, connect tools, share a lender pack |
 | Employee | Any staff member with work expenses | Send in receipts by photo or upload, and see their own submissions | See anything else |
 
-**Two-person approval** (level 4) needs two different people, each a business owner or finance manager. A business with only one such person would name a trusted second approver; our server already accepts one, and the page to name them is on our list (see the [self-assessment](SELF-ASSESSMENT.md)).
+**Two-person approval** (level 4) needs two different people, each a business owner or finance manager. A business with only one such person would name a trusted second approver. Our server accepts one, but this prototype has no screen to name them (see the [self-assessment](SELF-ASSESSMENT.md)).
 
 ### How the levels are enforced
 
 - **Every action has a fixed level** defined in our server code. The AI cannot change it.
 - **The server checks the level and the user's role** before running anything; the app screen cannot skip this check.
 - **The AI never has more access than the person using it.**
-- **Two-person approval needs two different people;** the same person cannot approve twice.
+- **Two-person approval needs two different people;** the same person cannot approve twice, and the person who prepared a high-risk change cannot approve it.
+- **A bill with changed bank details cannot be approved** until the bank-detail change itself has been approved by two people.
 - **Each approval is recorded** with who, what and when.
 - **Pause AI switch.** The business owner can stop all automatic AI actions at once. Everything then waits for a person until AI is switched back on.
 
@@ -88,18 +89,20 @@ Our roles are the essential jobs found in small-business finance, based on the u
 | Bank account | Read-only transaction access through Plaid (Transactions only, the least data) | Plaid access tokens are encrypted and never leave the server |
 | Accounting software | Accounting data only; writes only after approval, each with a request id so a retry can't repeat it | Sign-in link tied to the browser that started it; notifications must carry a valid signature |
 
-Unsigned or wrongly signed notifications are rejected.
+Unsigned or wrongly signed notifications from the payment platform and the accounting software are rejected. The demo inbox's notifications are accepted only from our own machine or private network, and each is capped at 512 KB.
 
-**Email in our demo and in production.** In our demo, Mailpit (a test inbox) notifies our app the moment each email arrives. In production, the business forwards bills to a dedicated inbox. We read it over IMAP, the standard way to read any mailbox, so it works with Gmail, Outlook or any other provider, and we are told as soon as new mail arrives. In both cases each email's unique message ID makes sure it is processed only once.
+**Email in our demo and in production.** In our demo, Mailpit (a test inbox) notifies our app the moment each email arrives. In production, the business would forward bills to a dedicated inbox read over IMAP, the standard way to read any mailbox, so it works with Gmail, Outlook or any other provider. This prototype connects to the demo inbox only. Either way, each email's unique message ID makes sure it is processed only once.
 
 **What we never process from email.** Some emails are refused outright and the owner gets a notification: those whose sender's domain says they are not genuine (DMARC failed), those whose signature from the sender's own domain doesn't match (forged or changed on the way), automatic replies and delivery reports, emails sent from the bills inbox itself, emails over 25 MB, and floods of more than 200 emails an hour. Other warning signs, such as a look-alike domain, still let the bill through, but it carries a warning and stops for a person. A sender can write any "this email passed its checks" header they like, so we only believe the one our own mail server adds.
 
-**Emails we send.** We only send emails a person has approved: payment reminders to customers and questions to suppliers. The address is always the one on record for that customer or supplier, never one from the AI or from a document. So if a bill changes a supplier's contact details, our question still goes to the address we trusted before. We never send to a bills inbox, which would create a loop.
+**Emails we send.** We only send emails a person has approved: payment reminders to customers and questions to suppliers. The address is always the one on record for that customer or supplier, never one from the AI or from a document. So if a bill changes a supplier's contact details, our question still goes to the address we trusted before. We never send to a bills inbox, which would create a loop, and an email that still contains a placeholder such as `[SUPPLIER_1]` is refused.
 
 ## Activity log
 
-- **Every step is recorded:** each document received, AI call, match, approval and change.
-- **Tamper-evident:** each entry includes a fingerprint of the one before it, so any edit or deletion breaks the chain and is detected.
+- **Every step is recorded:** each document received, AI reading of a document, match, approval and change. Every other AI call (the assistant and recommendation wording) is recorded in a separate usage log with its cost.
+- **Tamper-evident:** each entry includes a keyed fingerprint (HMAC) of the one before it, so any edit or deletion breaks the chain and is detected.
+- **Append-only:** the app's database account cannot change or delete log entries.
+- **No document text:** the log refuses fields such as text, body, passwords and tokens.
 - **Execution evidence:** this log is also our record of operations in the test environment.
 
 ## How we cover the OWASP risks
@@ -131,7 +134,7 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | ASI06 Memory and context poisoning | The AI keeps no long-term memory. What Cocent learns from people's corrections is kept by our code, only after two matching corrections on approved bills, and never includes bank details, contacts or amounts. Chat history belongs to one user; the recommendations agent reads only checked records, never raw documents |
 | ASI08 Cascading failures | Limited retries, a work queue that resumes after outages, and failures sent to a person |
 | ASI09 Human-agent trust exploitation | Confirmation cards show exactly what will change; AI text is labelled and linked to its evidence; risky actions need two people |
-| ASI10 Rogue agents | Every AI step is in the tamper-evident log, and the Pause AI switch stops all automatic actions at once |
+| ASI10 Rogue agents | Every action and every document-reading AI step is in the tamper-evident log, every other AI call is in the usage log, and the Pause AI switch stops all automatic actions at once |
 
 **OWASP Top 10 for web apps (2025) and API Security Top 10 (2023)**
 
@@ -143,10 +146,10 @@ OWASP publishes the most widely used lists of security risks for web apps, APIs 
 | A03 Software supply chain failures | Locked dependency versions and scanning for known weaknesses (pip-audit, npm audit) |
 | A04 Cryptographic failures | Encrypted traffic, encrypted personal-detail store and file archive, and keys kept in environment secrets, never in code |
 | A05 Injection | Database access only through safe, parameterised queries; no system commands built from user input; spreadsheet exports neutralise cells starting with `=`, `+`, `-` or `@` so they can't run formulas |
-| A07 Authentication failures, API2 | Passwords stored with Argon2, sign-in attempts limited, secure session cookies that expire when idle, and two-step sign-in (authenticator app) for business owners and finance managers, who approve the riskiest changes |
+| A07 Authentication failures, API2 | Passwords of at least 12 characters stored with Argon2, sign-in attempts limited, session cookies stored only as hashes on the server and expiring after 30 minutes idle or 12 hours, and two-step sign-in (authenticator app) for business owners, finance managers and any named second approver, who approve the riskiest changes |
 | A08 Software or data integrity failures | Signed notifications from outside services, file fingerprints and the tamper-evident log |
 | A09 Security logging and alerting failures | Failed sign-ins, refused approvals and gateway blocks are logged; repeated failed sign-ins lock the account and notify the business |
-| A10 Mishandling of exceptional conditions | Every security check fails closed: if a check errors, the action is refused. Every outside call has a time limit. |
+| A10 Mishandling of exceptional conditions | Every security check fails closed: if a check errors, the action is refused. Every outside call has a time limit, and redirects are never followed. |
 | API4 Unrestricted resource consumption | Limits on upload size, pages per document, requests per user and results per page |
 | API6 Unrestricted access to sensitive business flows | Bank-detail changes and every outside action always need approval; requests are rate-limited per person |
 | API7 Server-side request forgery | Our server only contacts a fixed list of services. It never opens web addresses found in documents or emails. |

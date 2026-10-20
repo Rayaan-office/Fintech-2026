@@ -48,7 +48,6 @@ All of them are used in test (sandbox) mode with made-up data. No real money mov
 | [cryptography](https://github.com/pyca/cryptography) | Encrypting documents, personal details and connection keys | Apache-2.0 or BSD-3-Clause |
 | [HTTPX](https://github.com/encode/httpx) | Calls to outside services, with time limits | BSD-3-Clause |
 | [stripe-python](https://github.com/stripe/stripe-python) | The payment platform connector | MIT |
-| [plaid-python](https://github.com/plaid/plaid-python) | The bank connector | MIT |
 | [boto3](https://github.com/boto/boto3) | Talking to the document storage | Apache-2.0 |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | The three AI workflows: reading documents, recommendations and the assistant | MIT |
 | [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | Reading text from PDFs and drawing page pictures | AGPL-3.0 or Artifex commercial licence (see the note below) |
@@ -57,7 +56,6 @@ All of them are used in test (sandbox) mode with made-up data. No real money mov
 | [Microsoft Presidio](https://github.com/microsoft/presidio) (analyzer and anonymizer) | Finding and hiding people's names and places before text reaches the AI | MIT |
 | [spaCy](https://github.com/explosion/spaCy) and its [en_core_web_lg](https://github.com/explosion/spacy-models) model | The language model Presidio uses to recognise names | MIT |
 | [python-magic](https://github.com/ahupp/python-magic) | Calling libmagic | MIT |
-| [pandas](https://pandas.pydata.org) and [NumPy](https://numpy.org) | Forecasts and business-health calculations | BSD-3-Clause |
 | [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz) | Comparing names, addresses and bill lines | MIT |
 | [phonenumbers](https://github.com/daviddrysdale/python-phonenumbers) | Recognising phone numbers in any format | Apache-2.0 |
 | [python-stdnum](https://arthurdejong.org/python-stdnum/) | Checking bank, VAT and company numbers by their check digits | LGPL-2.1 or later |
@@ -67,8 +65,6 @@ All of them are used in test (sandbox) mode with made-up data. No real money mov
 | [openpyxl](https://openpyxl.readthedocs.io) | Reading uploaded spreadsheets (values only, never formulas or macros) | MIT |
 | [dnspython](https://www.dnspython.org) | Looking up senders' email records | ISC |
 | [dkimpy](https://launchpad.net/dkimpy) | Checking email signatures (DKIM) | BSD-style |
-| [pyspf](https://github.com/sdgathman/pyspf) | Checking which servers may send for a domain (SPF) | Python Software Foundation Licence |
-| [qrcode](https://github.com/lincolnloop/python-qrcode) | Installed with the server; the app draws its QR codes in the browser instead | BSD |
 
 ## App libraries (JavaScript)
 

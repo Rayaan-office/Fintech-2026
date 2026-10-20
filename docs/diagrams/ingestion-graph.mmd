@@ -1,7 +1,7 @@
 %%{init: {"flowchart": {"wrappingWidth": 260}}}%%
 flowchart TD
-  START(["A document arrives<br/>email · upload · photo · payment · bank record"])
-  CHECK["<b>Safety check</b><br/>Is it genuine, a duplicate, a safe file?"]
+  START(["A document arrives<br/>email · upload · photo"])
+  CHECK["<b>Safety check</b><br/>Is it genuine and a safe file?"]
   STORE[("<b>Locked archive</b><br/>original kept unchanged")]
   READ["<b>Read the text</b><br/>on our own server, no AI"]
   HIDE["<b>Hide personal details</b><br/>names, bank and card numbers<br/>become placeholders"]
@@ -9,23 +9,28 @@ flowchart TD
   AIREAD["<b>AI fills in a form</b><br/>who · what · how much · when"]
   SUM{"<b>Do the numbers add up</b><br/>and appear in the document?"}
   RETRY["<b>Try again</b><br/>then ask a second AI to compare"]
+  FRAUD{"<b>Fraud check</b><br/>new bank details, look-alike sender,<br/>duplicate, unusual amount?"}
+  REFUSE(["Refused"])
   MATCH{"<b>Match it</b><br/>with payments and bank records<br/>Confident?"}
   PERSON["<b>Ask a person</b><br/>they correct or approve it"]
   BOOKS[("<b>Add to the business's record</b>")]
-  APPROVE{"<b>Needs approval?</b><br/>see approval levels"}
+  APPROVE{"<b>Approved</b><br/>to add to the accounting software?"}
   SYNC(["Update the accounting software<br/>with the original attached"])
 
   START --> CHECK
-  CHECK -- "fails" --> PERSON
+  CHECK -- "fails" --> REFUSE
   CHECK --> STORE
   CHECK --> READ --> HIDE --> GUARD
   GUARD -- "yes, stop" --> PERSON
   GUARD -- "no, safe to send" --> AIREAD --> SUM
-  SUM -- "yes" --> MATCH
+  SUM -- "yes" --> FRAUD
   SUM -- "no" --> RETRY
-  RETRY -- "fixed" --> MATCH
+  RETRY -- "fixed" --> FRAUD
+  FRAUD -- "no warnings" --> MATCH
+  FRAUD -- "warning" --> PERSON
   RETRY -- "still wrong" --> PERSON
   MATCH -- "yes" --> BOOKS
   MATCH -- "not sure" --> PERSON
   PERSON --> BOOKS
-  BOOKS --> APPROVE --> SYNC
+  BOOKS --> APPROVE
+  APPROVE -- "yes" --> SYNC

@@ -134,7 +134,7 @@ export function docDetail(over: Partial<DocumentDetail> = {}): DocumentDetail {
   };
 }
 
-// Stage 7: recommendations, financing and Ask (backend/app/api/advice.py and assistant.py)
+// Recommendations, financing and Ask (backend/app/api/advice.py and assistant.py)
 
 export const financeManager: Me = {
   ...owner,
@@ -278,7 +278,7 @@ export function askReply(over: Partial<AskReply> = {}): AskReply {
   };
 }
 
-// Stage 6 and F4: cash, forecast, what-if, why cash changed, business health and Home (backend/app/api/insights.py)
+// Cash, forecast, what-if, why cash changed, business health and Home (backend/app/api/insights.py)
 
 export const TODAY = "2026-10-18";
 
