@@ -10,9 +10,9 @@ Last full run: 20 October 2026.
 |---|---|---|---|
 | Unit | Single calculations: hiding personal details, the checks on AI answers, fee allowances, financing costs, the activity log chain, encryption, email parsing, learning | 87 | Pass |
 | Integration | Whole flows through the API on a real database: sign-in, documents, approvals, every connector, forecasts, recommendations, financing, the assistant | 234 | Pass |
-| Security | One business can't see another's data, roles and approval levels, two-step sign-in, security headers, the AI never sees hidden details | 48 | Pass |
-| Regression | One test for each bug we fixed | 79 | Pass |
-| **Server total** | Including tests that run with several inputs | **543 runs** | **All pass** |
+| Security | One business can't see another's data, roles and approval levels, two-step sign-in, session timeouts, security headers, upload and AI spending limits, outside calls, the AI never sees hidden details | 61 | Pass |
+| Regression | One test for each bug we fixed | 81 | Pass |
+| **Server total** | Including tests that run with several inputs | **568 runs** | **All pass** |
 | Live sandbox checks | Our connectors still understand the real Stripe and Plaid sandboxes, and our Stripe key can't change anything | 14 | Pass (see note) |
 | App | Every screen and shared component, in a simulated browser | 180 | All pass |
 | Browser journeys | A person using the real app end to end, with the real AI | 7 | Pass (see note) |
@@ -44,6 +44,7 @@ A few examples of what the tests found while we built Cocent, each now guarded b
 - A reminder sent late in the evening counted as sent a day earlier in some time zones, so the next reminder came a day early.
 - Rows with a fraud warning could be approved in bulk with one key; they now always open the full approval card.
 - A look-alike web address (our address followed by `.evil.com`) passed the check that blocks requests from other sites.
+- A refused approval was never kept in the activity log: the refusal was undone along with the rest of the refused request.
 
 ## Run the tests yourself
 
