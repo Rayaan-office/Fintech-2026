@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import events
+from .db import tenant_session
 from .models import Action, Approval, Business, Notification
 from .security import audit
 from .security.rbac import ACTIONS, AI_FORBIDDEN, Level, Perm, Role
@@ -126,6 +127,12 @@ def _final_notice(action: Action) -> bool:
     return action.type == "send_payment_reminder" and (action.payload or {}).get("stage") == 3
 
 
+def _refused(action: Action, actor: str, event: str, reason: str) -> None:
+    """Log a refusal in its own transaction: the request's own transaction is undone when it is refused."""
+    with tenant_session(action.business_id) as db:
+        audit.record(db, action.business_id, actor, event, subject=f"action:{action.id}", details={"reason": reason})
+
+
 def decide(db: Session, p, action_id, decision: str) -> Action:
     action = db.get(Action, action_id)
     if not action:
@@ -134,8 +141,7 @@ def decide(db: Session, p, action_id, decision: str) -> Action:
         raise HTTPException(409, "This has already been decided.")
     why_not = _may_approve(p, action)
     if why_not:
-        audit.record(db, action.business_id, p.actor, "approval_refused", subject=f"action:{action.id}",
-                     details={"reason": why_not})
+        _refused(action, p.actor, "approval_refused", why_not)
         raise HTTPException(403, why_not)
     already = db.execute(select(Approval).where(Approval.action_id == action.id, Approval.user_id == p.user_id)).first()
     if already:
@@ -163,6 +169,10 @@ def cancel(db: Session, p, action_id) -> Action:
     action = db.get(Action, action_id)
     if not action or action.status != "pending":
         raise HTTPException(409, "Only waiting actions can be cancelled.")
+    if action.requested_by != p.actor and Role.OWNER not in p.roles:
+        why_not = "Only the person who asked for this, or a business owner, can cancel it."
+        _refused(action, p.actor, "cancel_refused", why_not)
+        raise HTTPException(403, why_not)
     action.status = "cancelled"
     action.decided_at = datetime.now(UTC)
     audit.record(db, action.business_id, p.actor, "action_cancelled", subject=f"action:{action.id}")
