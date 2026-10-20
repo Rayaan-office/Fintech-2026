@@ -24,7 +24,7 @@ She isn't alone. 82% of UK small and medium businesses have had cash-flow proble
 
 ## What Cocent does
 
-1. **Bills in, no typing.** Cocent reads bills from the inbox they already arrive in, hides personal details before the AI sees anything, checks every figure, and adds the bill to the books with the original attached after one approval.
+1. **Bills in, no typing.** Cocent reads bills from the inbox they already arrive in, hides personal details before the AI sees anything, checks every figure, and, with your approval, adds the bill to the books with the original attached.
 2. **Cash ahead.** One picture of the bank, card payments and books; a 90-day forecast; a warning weeks before cash runs short; and financing options compared by their real cost.
 3. **Safe by design.** A fake "new bank details" email is flagged, and changing a supplier's bank details needs two people. Every action has a fixed approval level, and every step goes into a log that shows any tampering.
 
@@ -34,7 +34,7 @@ Also: recommendations (price rises, slow payers, creeping costs), payment remind
 
 | Task | Before | With Cocent (measured in our demo run) |
 |---|---|---|
-| A bill reaches the books | Typed in by hand, PDF filed separately | Read and checked in 6 to 11 seconds; one approval adds it with the original attached |
+| A bill reaches the books | Typed in by hand, PDF filed separately | Read and checked in 6 to 11 seconds; added to the books with the original attached once approved |
 | Matching the bank to invoices and bills | Line by line, by hand | 146 bank payments linked to what they paid in the first read |
 | Next month's cash | A spreadsheet, if anyone makes one | A 90-day forecast that updates itself, with best and worst case |
 | "We've changed our bank details" | Often paid without a second look | Flagged on the bill; two people must approve the change |

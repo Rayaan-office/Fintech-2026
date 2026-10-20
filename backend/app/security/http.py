@@ -27,8 +27,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Changes must come from our own app's address (blocks cross-site request forgery)
         if request.method not in SAFE_METHODS and not request.url.path.startswith(ORIGIN_EXEMPT_PREFIXES):
             origin = request.headers.get("origin") or request.headers.get("referer", "")
-            allowed = (_s.app_base_url, _s.api_base_url)
-            if not origin or not origin.startswith(allowed):
+            allowed = (_s.app_base_url.rstrip("/"), _s.api_base_url.rstrip("/"))
+            # The whole address must match: a look-alike such as localhost:5173.evil.com is refused
+            if not any(origin == a or origin.startswith(a + "/") for a in allowed):
                 return JSONResponse({"detail": "Request refused: unknown origin."}, status_code=403)
         response = await call_next(request)
         h = response.headers

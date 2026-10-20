@@ -46,7 +46,7 @@ Owners of small businesses who don't have a finance team. They get paid through 
 
 ### 4. Recommendations
 An AI agent reviews the business's own records whenever new data arrives and once a day, and raises recommendations such as:
-- **Supplier details changed:** "Acme Supplies' address and phone number changed on 12 October. Before: 4 Mill Lane. Now: 22 High Street." A bank-detail change is also treated as a fraud warning.
+- **Supplier details changed:** "Acme Supplies' address and phone number changed on 12 October. Before: 4 Mill Lane. Now: 22 High Street." A bank-detail change is also treated as a fraud warning, as are a look-alike sender, failed sender checks, a duplicate invoice, an unusual amount and pressure to pay fast.
 - **Supplier price rise:** "Acme charged £540 this month, 18% more than its usual £458."
 - **Slow-paying customer:** "Bright Cafe pays on average 10 days after the due date. Consider asking for a deposit or payment upfront."
 - **Spending creep:** a cost category or subscription growing month after month.
@@ -57,12 +57,12 @@ Each recommendation shows the numbers behind it and a suggested next step, such 
 ### 5. Financing options
 - **Business profile:** filled in automatically from the business's data (months trading, sales, card sales, unpaid invoices, existing repayments), plus a few details the owner adds (country, industry, what the money is for). The owner can correct any value; we keep the original next to the correction.
 - **Financing catalog:** a list of financing products, each with its amount and term range, cost and eligibility rules. In our demo the providers and rates are sample data.
-- **Automatic matching:** when a shortfall is forecast, or a what-if shows a gap, suitable options are matched to its size and length.
+- **Matching to the need:** when a shortfall is forecast, the warning links to options matched to its size and length. The assistant can also match options to a what-if gap or an amount the owner names.
 - **Financing page:** the owner can also browse the catalog themselves, filtered to what they qualify for, and move amount and term sliders to see the cost and effect on the forecast.
 - **Side-by-side comparison:** each option's total cost in money, not just a rate, and its monthly repayment.
 - **Effect on the forecast:** each option is run through the forecast, for example "with this loan, cash stays above your safety level until March".
 - **Readiness:** what a lender would look at and what would improve the business's chances.
-- **Lender pack:** a PDF of the profile, profit and loss and unpaid invoices that the owner can share with a lender. Sharing it needs approval; nothing is ever applied for automatically.
+- **Lender pack:** a PDF of the profile, profit and loss, unpaid invoices, cash forecast and readiness checklist that the owner can share with a lender. Sharing it needs approval; nothing is ever applied for automatically.
 
 ### 6. Chat assistant
 - **Questions about the business in plain English,** for example:
@@ -71,7 +71,7 @@ Each recommendation shows the numbers behind it and a suggested next step, such 
   - "Which supplier costs me the most, and has that changed?"
   - "Who owes me the most, and who pays late?"
   - "Can I afford a new van next month?"
-- **Answers come from the business's own numbers,** fact-checked before they are shown.
+- **Answers come from the business's own numbers and documents,** fact-checked before they are shown, with a chart or table, sources and follow-up questions.
 - **Suggested actions,** such as reminding a customer to pay. Anything important waits for a person's approval.
 
 ### 7. A clean, interactive app
@@ -81,14 +81,16 @@ Each recommendation shows the numbers behind it and a suggested next step, such 
 
 ### 8. Trust and control
 - **Approval levels:** the AI can read and suggest freely; money and outside actions need people (see [Security](SECURITY.md)).
+- **Roles:** owner, finance manager, bookkeeper and employee. Employees only see a "My receipts" page to send in receipts. Owners and finance managers must use two-step sign-in.
+- **Approval limit:** small, confident bills from known suppliers can be recorded automatically up to a limit the owner sets, with Undo.
 - **Pause AI switch:** the owner can stop all automatic AI actions at once.
 - **Permanent activity log** of every step.
 - **Every bill and receipt linked** to its original document.
 
 ### 9. Getting paid and learning
-- **Reminders in three steps:** friendly, firm and a final notice, which only a business owner can approve. A card payment link can be added after approval.
-- **What paying costs:** which customers' payments arrive short or slowly, and what each way of paying costs.
-- **Learning from decisions:** after two matching corrections, Cocent fills the value in next time (marked, with Undo), and recommendations people act on rise to the top. Bank details, contacts and amounts are never learned.
+- **Reminders in three steps:** friendly, firm and a final notice. The final notice needs a business owner's approval. A card payment link can be added after approval.
+- **What paying costs:** which customers' payments arrive short or slowly, and what each way of paying costs. A payment that arrives short can be closed off as a bank charge.
+- **Learning from decisions:** after two matching corrections, Cocent fills the value in next time (marked, with Undo), and recommendations people act on rise to the top. Bank details, contacts and amounts are never learned. A "What we've learned" page shows everything learned, with a reset.
 - **Search everything** (Ctrl or ⌘ K) and keyboard shortcuts.
 
 ## In our demo

@@ -26,7 +26,7 @@ No sandbox accounts needed. From `backend/`:
 uv run python ../tests/e2e/seed.py
 ```
 
-This loads the whole story straight into its own database (`copilot_e2e`): customers, suppliers, invoices, bills, bank transactions, card payouts and their matches. It starts from empty every time. Then follow [Run Cocent yourself](README.md), step 4.
+This loads the whole story straight into its own database (`copilot_e2e`): customers, suppliers, invoices, bills, bank transactions and their matches. It starts from empty every time. Then carry on with step 4 of [Run Cocent yourself](README.md) to start the server.
 
 ## Full setup: through the real sandboxes
 
@@ -34,8 +34,8 @@ With the server running and each service connected (see its guide), run these fr
 
 | Step | Command | What it does |
 |---|---|---|
-| 1 | Connect the bank on the Connections page | Plaid creates a test bank login with the story's 266 bank transactions and today's balance. No script needed. |
-| 2 | `uv run python -m app.demo.books` | Fills the QuickBooks sandbox company with 5 customers, 6 suppliers, products, 117 invoices, 44 bills and 146 payments, dated as in the story, with 20% VAT. Refuses a company outside the UK. |
+| 1 | Connect the bank on the Connections page | Plaid creates a test bank login with the story's bank transactions (about 280) and today's balance. No script needed. |
+| 2 | `uv run python -m app.demo.books` | Fills the QuickBooks sandbox company with 6 customers, 6 suppliers, products, about 130 invoices, 44 bills and 146 payments, dated as in the story, with 20% VAT. Refuses a company outside the UK. |
 | 3 | `uv run python -m app.demo.payments` | Fills the Stripe sandbox with the same customers, a week of card sales, a declined card, a refund, a card dispute, a paid invoice and an open deposit invoice. Refuses a sandbox outside the UK. |
 | 4 | `uv run python -m app.demo.emails` | Sends the emailed bills to the test inbox (below). |
 

@@ -7,7 +7,7 @@ They use their own database (`copilot_test`), created automatically, so they nev
 
 | Folder | What it checks | Runs against |
 |---|---|---|
-| `backend/unit` | Single functions: redaction, checks, matching scores, forecast maths | Nothing outside the function |
+| `backend/unit` | Single functions: redaction, checks, fee allowances, financing costs, the log chain, encryption | Nothing outside the function |
 | `backend/integration` | Whole API flows: sign-in, documents, approvals, connectors | Test database, archive and Mailpit test inbox in Docker; outside services faked. Email tests are skipped if Mailpit isn't running. |
 | `backend/security` | Access between businesses, roles, two-step sign-in, headers, injection, log tampering | Test database |
 | `backend/regression` | One test for every bug we fix, named after the bug, so it can't come back | As needed |
